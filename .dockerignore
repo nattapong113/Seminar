@@ -1,0 +1,21 @@
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+env/
+venv/
+.build/
+.git
+.gitignore
+*.sqlite3
+*.db
+.pip-wheel-cache
+
+# IDE files
+.vscode
+.idea
+
+# OS
+.DS_Store
+Thumbs.db
