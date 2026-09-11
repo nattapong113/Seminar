@@ -1,87 +1,124 @@
 # Pattaya Smart Tourism Dashboard
 
-ระบบต้นแบบคลังข้อมูลและแดชบอร์ดวิเคราะห์พฤติกรรมนักท่องเที่ยวเมืองพัทยา
+ระบบต้นแบบคลังข้อมูลและแดชบอร์ดวิเคราะห์พฤติกรรมนักท่องเที่ยวเมืองพัทยา **ทุกตัวเลขบนแดชบอร์ดมาจากข้อมูลจริงที่นำเข้าแล้ว ไม่มีข้อมูลจำลอง**
+
+ข้อมูลเก็บอยู่บน **Supabase (PostgreSQL)**
 
 ## เริ่มต้นใช้งาน
 
+1. สร้างไฟล์ `.env` ที่รากโปรเจกต์ (ข้าง `README.md`) ใส่บรรทัดเดียว:
+   ```
+   DATABASE_URL=postgresql://postgres.<project-ref>:<รหัสผ่าน>@aws-0-<region>.pooler.supabase.com:5432/postgres
+   ```
+   หาได้จาก Supabase → ปุ่ม **Connect** → **Direct** → Method **Session pooler**
+   - ลบวงเล็บ `[ ]` รอบรหัสผ่านออก
+   - ถ้ารหัสผ่านมีอักขระพิเศษ ต้องเข้ารหัสแบบ URL เช่น `@` → `%40`, `#` → `%23`, `/` → `%2F`
+   - ไฟล์นี้อยู่ใน `.gitignore` และ `.dockerignore` แล้ว ห้าม commit
+
+2. ติดตั้งและรัน
+   ```powershell
+   python -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   pip install -r requirements.txt
+   python -m uvicorn app.main:app --reload
+   ```
+
+เปิด `http://127.0.0.1:8000` ในเบราว์เซอร์ ตอนเซิร์ฟเวอร์เริ่มทำงานจะสร้างตารางบน Supabase ให้เองถ้ายังไม่มี
+
+> สคริปต์นำเข้าพิมพ์ผลเป็นภาษาไทย ถ้า PowerShell แสดง `UnicodeEncodeError` ให้ตั้ง `$env:PYTHONIOENCODING="utf-8"` ก่อนรัน
+
+## ฐานข้อมูล Supabase
+
+- แอปต่อ PostgreSQL ของ Supabase โดยตรงด้วย `psycopg` ผ่าน connection pool ([app/database.py](app/database.py)) ไม่ได้ใช้ REST API หรือ anon key
+- **เปิด Row Level Security ทุกตารางโดยไม่มี policy** จึงไม่มีใครอ่าน/แก้ข้อมูลผ่าน REST API ของ Supabase ได้ แอปต่อด้วยสิทธิ์เจ้าของตารางซึ่งไม่ถูก RLS บังคับ จึงใช้งานได้ตามปกติ
+- เวลานำเข้า (`imported_at`) เก็บเป็น `TIMESTAMPTZ` และแสดงบนแดชบอร์ดเป็นเวลาไทย
+- Supabase แบบฟรีจะหยุดโปรเจกต์อัตโนมัติถ้าไม่มีการใช้งาน 7 วัน ถ้าเซิร์ฟเวอร์ต่อฐานข้อมูลไม่ได้ ให้เข้าไปกด Restore ที่หน้าโปรเจกต์
+
+### ย้ายข้อมูลจาก SQLite เดิม
+
+ก่อนย้ายไป Supabase ระบบเก็บข้อมูลในไฟล์ `pattaya_tourism.db` (SQLite) ไฟล์นี้ยังเก็บไว้เป็นข้อมูลสำรอง
+คัดลอกขึ้น Supabase ได้ด้วยคำสั่งเดียว โดยเก็บ id เดิมทุกแถวและตรวจว่าจำนวนแถวตรงกันก่อน commit
+
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python -m uvicorn app.main:app --reload
+& .\.venv\Scripts\python.exe scripts\migrate_sqlite_to_supabase.py            # Supabase ต้องยังว่าง
+& .\.venv\Scripts\python.exe scripts\migrate_sqlite_to_supabase.py --replace  # ลบของเดิมบน Supabase แล้วคัดลอกใหม่
 ```
 
-เปิด `http://127.0.0.1:8000` ในเบราว์เซอร์ ระบบจะสร้าง `pattaya_tourism.db` และข้อมูลตัวอย่างให้อัตโนมัติ
+## สถานะการเชื่อมข้อมูลจริง
 
-## โครงสร้างข้อมูล
+| ชุดข้อมูล | แหล่งที่มา | ตาราง | จำนวน |
+|---|---|---|---|
+| นักท่องเที่ยวรายเดือน | Open Data เมืองพัทยา ชุด 172 (เกาะล้าน) | `tourism_monthly` | 48 เดือน (2022–2025) |
+| ประชากรแฝง | Open Data เมืองพัทยา ชุด 238 | `demographic_profiles` | 135 แถว (2020–2024) |
+| ปริมาณรถรายแยก | Open Data เมืองพัทยา ชุด 112 | `zone_traffic_volume` | 744 แถว / 42 แยก (2024–2025) |
+| วันหยุดและเทศกาล | World Holidays API (TH) | `public_holidays` | 111 วัน (2024–2028) |
+| สถานที่ท่องเที่ยว/ธุรกิจ | OpenStreetMap (Overpass API) | `poi_businesses` | 2,976 แห่ง 20 ประเภท |
+| สภาพอากาศปัจจุบัน + พยากรณ์ | Open-Meteo | เรียกสดผ่าน API (แคช 10–30 นาที) | — |
 
-- `tourism_observations`: ข้อมูลรายวันระดับโซน ประกอบด้วยพิกัด จำนวนคน รายได้ ระยะเวลาพัก สภาพอากาศ และวันหยุด
-- `GET /api/summary`: KPI ช่วง 7 วันล่าสุด
-- `GET /api/zones`: ข้อมูล heatmap และการจัดอันดับโซน
-- `GET /api/trends`: แนวโน้มรายวัน
-- `GET /api/recommendations`: คำแนะนำเชิงปฏิบัติจากสัญญาณข้อมูล
-- `GET /api/weather/live`: สภาพอากาศปัจจุบันจาก Open-Meteo
-- `GET /api/holidays?year=2026`: วันหยุดและเทศกาลของไทย (นำเข้าจาก Open Data ล่วงหน้าด้วยสคริปต์ด้านล่าง)
-- `GET /api/poi?category=hotel&limit=200`: สถานที่ท่องเที่ยว/ธุรกิจในพัทยา (นำเข้าจาก OpenStreetMap ด้วยสคริปต์ด้านล่าง)
-- `GET /api/traffic/zones?year=2025`: ปริมาณรถต่อแยกทั่วเมือง ใช้แทนความคึกคักรายโซนจริง (นำเข้าจาก Open Data ด้วยสคริปต์ด้านล่าง)
-- `GET /api/traffic/trends?intersection_name=แยกพัทยากลาง`: แนวโน้มปริมาณรถรายเดือนของแยกที่ระบุ (ไม่ระบุ = รวมทุกแยก)
-- `GET /api/pattaya/report`: ตรวจสอบ metrics ที่นำเข้าจากชีตพัทยา
+## โครงสร้าง API
 
-## นำเข้าไฟล์ Excel ของจังหวัดชลบุรี
+| Endpoint | ใช้ทำอะไร |
+|---|---|
+| `GET /api/summary` | KPI ภาพรวมทั้งหมด (นักท่องเที่ยว, ปริมาณรถ, POI, ประชากรแฝง, วันหยุดถัดไป) |
+| `GET /api/zones` | แยกจริงพร้อมพิกัด ปริมาณรถ และจำนวนธุรกิจท่องเที่ยวรอบแยก (ใช้ทำแผนที่) |
+| `GET /api/trends` | นักท่องเที่ยวรายเดือน พร้อมจำนวนวันหยุดในเดือนนั้น |
+| `GET /api/traffic/zones`, `GET /api/traffic/trends` | ปริมาณรถรายแยก / รายเดือน |
+| `GET /api/tourism/monthly?year=2025` | ข้อมูลนักท่องเที่ยวรายเดือนดิบ |
+| `GET /api/demographics?year=2024&category=เพศ` | ประชากรแฝงจำแนกตามกลุ่ม |
+| `GET /api/poi?category=hotel`, `GET /api/poi/categories` | สถานที่ท่องเที่ยว/ธุรกิจ และจำนวนแยกตามประเภท |
+| `GET /api/holidays?year=2026`, `GET /api/holidays/upcoming` | วันหยุดและเทศกาล (ชื่อภาษาไทย) |
+| `GET /api/weather/live`, `GET /api/weather/forecast?days=7` | สภาพอากาศปัจจุบันและพยากรณ์ จับคู่กับวันหยุด |
+| `GET /api/recommendations` | คำแนะนำที่อนุมานจากสัญญาณข้อมูลจริง ระบุแหล่งที่มาทุกข้อ |
+| `GET /api/sources` | แหล่งข้อมูลทุกชุดและเวลาที่นำเข้าล่าสุด |
+| `GET /api/pattaya/report` | metrics ที่นำเข้าจากชีต Excel ของจังหวัดชลบุรี |
 
-ไฟล์รายงานแบบหลายชีต เช่น `ข้อมูลชล (1).xlsx` จะถูกเก็บข้อมูลต้นฉบับทุกช่องใน `raw_excel_cells` และแยกตัวเลขจากชีต `พัทยา ชลบุรี` ลง `pattaya_report_metrics` โดยไม่ทับข้อมูลรายวันเดิม
+ดู Swagger ได้ที่ `http://127.0.0.1:8000/docs`
 
-```powershell
-& .\.venv\Scripts\python.exe scripts\import_excel.py "C:\Users\PONG\Downloads\ข้อมูลชล (1).xlsx"
-```
+## การนำเข้าข้อมูลใหม่
 
-หลังนำเข้า ตรวจผลได้ที่ `http://127.0.0.1:8000/api/pattaya/report` หรือเปิด Swagger ที่ `http://127.0.0.1:8000/docs`
+สคริปต์ทุกตัวเขียนลง Supabase ตาม `DATABASE_URL` ใน `.env` และบันทึกประวัติการนำเข้าลงตาราง `imports`
+ถ้าไฟล์ CSV นำเข้าไม่สำเร็จ ข้อมูลเดิมของไฟล์นั้นจะยังอยู่ครบ (ทำใน transaction ย่อยต่อไฟล์)
 
-## นำเข้า CSV
-
-ระบบรองรับไฟล์นักท่องเที่ยวรายเดือนและไฟล์ข้อมูลประชากร โดยตรวจ encoding ภาษาไทยให้อัตโนมัติ ไฟล์ต้นฉบับดาวน์โหลดได้จาก Open Data ของเทศบาลเมืองพัทยา ([data.pattaya.go.th](https://data.pattaya.go.th)) ชุดข้อมูล "นักท่องเที่ยวเดินทางลงเกาะล้าน" (172) และ "ประชากรแฝงของเมืองพัทยา" (238)
-
-```powershell
-& .\.venv\Scripts\python.exe scripts\import_csv.py `
-	"C:\Users\PONG\Downloads\172-.csv" `
-	"C:\Users\PONG\Downloads\238-.csv"
-```
-
-- `172-.csv` เก็บใน `tourism_monthly` และใช้สร้างกราฟแนวโน้มจริง
-- `238-.csv` (รูปแบบตาราง `category_type,category_label,pop_YYYY,...`) เก็บใน `demographic_profiles` สำหรับวิเคราะห์กลุ่มประชากร
-- API ข้อมูลรายเดือน: `GET /api/tourism/monthly`
-- API ข้อมูลประชากร: `GET /api/demographics?year=2024&category=เพศ`
-
-## นำเข้าปริมาณรถรายแยก (ตัวแทนความคึกคักรายโซน)
-
-ยังไม่มี Open Data ที่ระบุ "จำนวนนักท่องเที่ยว/รายได้รายโซน" ตรง ๆ จึงใช้ชุดข้อมูล "ปริมาณรถ" (112) จาก data.pattaya.go.th ซึ่งมีปริมาณรถรายเดือนแยกตามสี่แยกจริงทั่วเมือง (จอมเทียน, นาเกลือ, พัทยากลาง ฯลฯ) แทนความคึกคักของแต่ละโซน เก็บใน `zone_traffic_volume`
+ไฟล์ CSV ของเมืองพัทยาดาวน์โหลดได้จาก [data.pattaya.go.th](https://data.pattaya.go.th) หรือผ่าน CKAN API เช่น
+`https://data.pattaya.go.th/api/3/action/package_show?id=112`
 
 ```powershell
-& .\.venv\Scripts\python.exe scripts\import_csv.py "C:\Users\PONG\Downloads\112-.csv"
+$env:PYTHONIOENCODING="utf-8"
+
+# นักท่องเที่ยว (172) และประชากรแฝง (238)
+& .\.venv\Scripts\python.exe scripts\import_csv.py "172-.csv" "238-.csv"
+
+# ปริมาณรถรายแยก (112) แล้วหาพิกัดของแยก
+& .\.venv\Scripts\python.exe scripts\import_csv.py "traffic_2567.csv" "traffic_2568.csv"
 & .\.venv\Scripts\python.exe scripts\geocode_intersections.py
-```
 
-ไฟล์ต้นฉบับไม่มีพิกัด สคริปต์ `geocode_intersections.py` จะจับคู่ชื่อแยกกับโหนดสัญญาณไฟจราจร (`highway=traffic_signals`) ที่มีชื่อตรงกันใน OpenStreetMap ให้อัตโนมัติ ปัจจุบันจับคู่ได้ 8 จาก 42 แยก (แยกที่เหลือยังไม่มีชื่อตรงกันใน OpenStreetMap จึงไม่มีพิกัด แต่ยังมีข้อมูลปริมาณรถอยู่ ใช้แสดงเป็นอันดับ/กราฟได้)
-
-## นำเข้าวันหยุดและเทศกาล
-
-ดึงวันหยุดราชการและเทศกาลของไทยจาก Open Data (World Holidays API) มาเก็บในตาราง `public_holidays`
-
-```powershell
+# วันหยุดและเทศกาล
 & .\.venv\Scripts\python.exe scripts\import_holidays.py
-& .\.venv\Scripts\python.exe scripts\import_holidays.py --years 2026 2027
-```
 
-ตรวจผลได้ที่ `GET /api/holidays?year=2026`
-
-## นำเข้าสถานที่ท่องเที่ยว/ธุรกิจในพัทยา
-
-ดึงข้อมูลสถานที่ท่องเที่ยว โรงแรม ร้านอาหาร คาเฟ่ บาร์ ฯลฯ ในเขตพัทยาจาก OpenStreetMap (Overpass API) มาเก็บในตาราง `poi_businesses`
-
-```powershell
+# สถานที่ท่องเที่ยว/ธุรกิจจาก OpenStreetMap
 & .\.venv\Scripts\python.exe scripts\import_poi_osm.py
+
+# รายงาน Excel หลายชีตของจังหวัดชลบุรี
+& .\.venv\Scripts\python.exe scripts\import_excel.py "ข้อมูลชล (1).xlsx"
 ```
 
-ตรวจผลได้ที่ `GET /api/poi?category=hotel`
+## พิกัดของแยก
 
-`tourism_observations` (heatmap/summary รายโซน) ยังเป็นข้อมูลจำลองสำหรับสาธิต ส่วนนักท่องเที่ยวรายเดือน ประชากร วันหยุด/เทศกาล และสถานที่ท่องเที่ยว/ธุรกิจ เชื่อมกับ Open Data จริงแล้วตามด้านบน ควรเพิ่มระบบยืนยันตัวตนก่อนใช้งานจริง
+ชุดข้อมูลปริมาณรถไม่มีพิกัดมาให้ `geocode_intersections.py` จึงหาพิกัดจาก OpenStreetMap สองวิธี
+และบันทึกวิธีที่ใช้ไว้ในคอลัมน์ `geocode_method` เพื่อให้ตรวจสอบย้อนกลับได้
+
+| วิธี | ความหมาย | ครอบคลุม |
+|---|---|---|
+| `osm_junction_name` | โหนดแยกใน OSM ที่มีแท็ก `name` ตรงกับชื่อแยก (แม่นที่สุด) | 9 แยก |
+| `osm_road_pair` | จุดที่ถนนสองสายตัดกันจริงใน OSM เช่น "แยกพัทยากลาง" = ถนนพัทยากลาง × ถนนสุขุมวิท | 20 แยก |
+| `NULL` | OSM ไม่มีทั้งชื่อแยกและชื่อถนนที่ระบุได้ จึงไม่ใส่พิกัด | 13 แยก |
+
+รวม **29 จาก 42 แยกมีพิกัด** แยกที่ยังไม่มีพิกัดจะไม่ขึ้นบนแผนที่ แต่ยังมีข้อมูลปริมาณรถใช้ดูอันดับและกราฟได้ตามปกติ
+
+## ข้อควรรู้เกี่ยวกับคุณภาพข้อมูล
+
+- **ชุดข้อมูลปริมาณรถปี 2567 มีค่าผิดปกติ** เช่น ก.พ. 845,967 คัน เทียบกับ เม.ย. 22,559,325 คัน ยอดรวมปี 2567 (173 ล้าน) สูงกว่าปี 2568 (64 ล้าน) เกือบสามเท่า ควรตรวจสอบกับต้นทางก่อนนำไปเปรียบเทียบรายปี
+- ไฟล์ปี 2567 และ 2568 มีรายชื่อแยกไม่ตรงกัน (ปีละ 31 แยก รวมกัน 42 แยก) การเทียบ YoY รายแยกจึงทำได้เฉพาะแยกที่มีทั้งสองปี
+- ชุดข้อมูลนักท่องเที่ยวครอบคลุมเฉพาะผู้เดินทางลงเกาะล้าน ไม่ใช่นักท่องเที่ยวทั้งเมืองพัทยา
+- แหล่งวันหยุดให้ชื่อเป็นภาษาอังกฤษเท่านั้น ชื่อไทยมาจากตาราง `THAI_NAMES` ใน `scripts/import_holidays.py`
+- ยังไม่มีระบบยืนยันตัวตน (ตาราง `users`/`roles` สร้างไว้แล้วแต่ยังไม่ได้ใช้) ควรเพิ่มก่อนนำขึ้นใช้งานจริง

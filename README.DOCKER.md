@@ -10,4 +10,4 @@ This will build the image, install dependencies inside the container, and start 
 
 Notes:
 - The repository is mounted into the container so code edits are visible (dev reload enabled).
-- Database `pattaya_tourism.db` will be created inside the container filesystem. To persist it, bind-mount a host directory to `/app` or add a named volume for the DB path.
+- The app stores data in Supabase (PostgreSQL). Create `.env` with `DATABASE_URL` before starting; it reaches the container through the `./:/app` mount and is excluded from the image by `.dockerignore`.

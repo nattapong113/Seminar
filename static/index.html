@@ -7,9 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
   <link rel="stylesheet" href="/static/styles.css" />
-  <style>.weather-live{font-family:'DM Mono';font-size:10px;color:#63816f;white-space:nowrap}</style>
 </head>
 <body>
   <div class="app-shell">
@@ -17,39 +16,118 @@
       <div class="brand"><div class="brand-mark">P</div><div><strong>PATTAYA</strong><span>SMART TOURISM</span></div></div>
       <div class="side-label">WORKSPACE</div>
       <nav>
-        <button class="nav-item active"><span class="nav-icon">◉</span>ภาพรวมเมือง</button>
-        <button class="nav-item"><span class="nav-icon">⌁</span>พฤติกรรมเชิงพื้นที่</button>
-        <button class="nav-item"><span class="nav-icon">↗</span>แนวโน้มและพยากรณ์</button>
-        <button class="nav-item"><span class="nav-icon">▤</span>รายงานผู้บริหาร</button>
+        <a class="nav-item active" href="#section-overview"><span class="nav-icon">◉</span>ภาพรวมเมือง</a>
+        <a class="nav-item" href="#section-spatial"><span class="nav-icon">⌁</span>พฤติกรรมเชิงพื้นที่</a>
+        <a class="nav-item" href="#section-trends"><span class="nav-icon">↗</span>แนวโน้มและพยากรณ์</a>
+        <a class="nav-item" href="#section-context"><span class="nav-icon">▤</span>บริบทเมืองและประชากร</a>
+        <a class="nav-item" href="#section-sources"><span class="nav-icon">⛁</span>แหล่งข้อมูล</a>
       </nav>
-      <div class="sidebar-bottom"><div class="live-dot"></div><div><strong>DATA STREAM</strong><span>อัปเดตล่าสุด 09 ก.ย. 2026</span></div></div>
+      <div class="sidebar-bottom"><div class="live-dot"></div><div><strong>DATA STREAM</strong><span id="stream-status">กำลังเชื่อมต่อ...</span></div></div>
     </aside>
 
     <main class="main-content">
-      <header class="topbar"><div><p class="eyebrow">CITY INTELLIGENCE / PATTAYA</p><h1>ห้องควบคุมการท่องเที่ยว</h1></div><button class="report-btn" id="export-btn"><span>↓</span> ส่งออกรายงาน</button></header>
-      <section class="toolbar"><div class="date-chip"><span>ช่วงข้อมูล</span><strong>25 ส.ค. — 31 ส.ค. 2026</strong></div><label class="select-wrap"><span>สภาพอากาศในข้อมูล</span><select id="weather-filter"><option value="">ทั้งหมด</option><option value="แจ่มใส">แจ่มใส</option><option value="ฝนตก">ฝนตก</option></select></label><div class="weather-live" id="weather-live">กำลังอ่านสภาพอากาศจริง...</div><div class="status-pill"><i></i> ฐานข้อมูลออนไลน์</div></section>
+      <header class="topbar">
+        <div><p class="eyebrow">CITY INTELLIGENCE / PATTAYA</p><h1>ห้องควบคุมการท่องเที่ยว</h1></div>
+        <button class="report-btn" id="export-btn"><span>↓</span> ส่งออกรายงาน</button>
+      </header>
 
-      <section class="kpi-grid">
-        <article class="kpi-card accent-coral"><div class="kpi-head"><span>ผู้เยี่ยมชม</span><span class="kpi-symbol">◎</span></div><strong id="visitors-kpi">—</strong><div class="kpi-foot"><span class="positive">+12.8%</span><span>เทียบช่วงก่อนหน้า</span></div></article>
-        <article class="kpi-card accent-blue"><div class="kpi-head"><span>มูลค่าการใช้จ่าย</span><span class="kpi-symbol">฿</span></div><strong id="spending-kpi">—</strong><div class="kpi-foot"><span class="positive">+8.4%</span><span>เทียบช่วงก่อนหน้า</span></div></article>
-        <article class="kpi-card accent-yellow"><div class="kpi-head"><span>เวลาพำนักเฉลี่ย</span><span class="kpi-symbol">◷</span></div><strong id="stay-kpi">—</strong><div class="kpi-foot"><span class="neutral">คงที่</span><span>จากข้อมูล 7 วันล่าสุด</span></div></article>
-        <article class="kpi-card accent-green"><div class="kpi-head"><span>ไมโครโซนที่ติดตาม</span><span class="kpi-symbol">⌖</span></div><strong id="zones-kpi">—</strong><div class="kpi-foot"><span class="positive">100%</span><span>มีข้อมูลพร้อมวิเคราะห์</span></div></article>
+      <section class="toolbar">
+        <div class="date-chip"><span>ข้อมูลนักท่องเที่ยว</span><strong id="tourism-range">—</strong></div>
+        <div class="date-chip"><span>ปริมาณรถ</span><strong id="traffic-range">—</strong></div>
+        <div class="weather-live" id="weather-live">กำลังอ่านสภาพอากาศจริง...</div>
+        <div class="status-pill"><i></i> <span id="holiday-pill">—</span></div>
       </section>
 
-      <section class="content-grid">
-        <article class="panel map-panel"><div class="panel-heading"><div><p class="eyebrow">SPATIAL BEHAVIOR</p><h2>ความหนาแน่นเชิงพื้นที่</h2></div><div class="legend"><span><i class="legend-dot high"></i>สูง</span><span><i class="legend-dot mid"></i>กลาง</span><span><i class="legend-dot low"></i>ต่ำ</span></div></div><div id="map"></div><div class="map-caption"><span><b id="map-zones">6</b> โซนข้อมูล</span><span>ขนาดวงกลม = จำนวนผู้เยี่ยมชม</span></div></article>
-        <article class="panel ranking-panel"><div class="panel-heading"><div><p class="eyebrow">ZONE PERFORMANCE</p><h2>โซนยอดนิยม</h2></div><button class="icon-btn" title="ดูข้อมูลทั้งหมด">↗</button></div><div id="ranking-list" class="ranking-list"><div class="loading">กำลังอ่านข้อมูล...</div></div></article>
+      <section class="kpi-grid" id="section-overview">
+        <article class="kpi-card accent-coral">
+          <div class="kpi-head"><span>นักท่องเที่ยวลงเกาะล้าน</span><span class="kpi-symbol">◎</span></div>
+          <strong id="kpi-tourists">—</strong>
+          <div class="kpi-foot"><span id="kpi-tourists-delta" class="neutral">—</span><span id="kpi-tourists-note">—</span></div>
+        </article>
+        <article class="kpi-card accent-blue">
+          <div class="kpi-head"><span>ปริมาณรถทั้งเมือง</span><span class="kpi-symbol">⛗</span></div>
+          <strong id="kpi-traffic">—</strong>
+          <div class="kpi-foot"><span id="kpi-traffic-note">—</span></div>
+        </article>
+        <article class="kpi-card accent-yellow">
+          <div class="kpi-head"><span>สถานที่ท่องเที่ยว/ธุรกิจ</span><span class="kpi-symbol">⌖</span></div>
+          <strong id="kpi-poi">—</strong>
+          <div class="kpi-foot"><span id="kpi-poi-note">—</span></div>
+        </article>
+        <article class="kpi-card accent-green">
+          <div class="kpi-head"><span>ประชากรแฝงพัทยา</span><span class="kpi-symbol">☖</span></div>
+          <strong id="kpi-population">—</strong>
+          <div class="kpi-foot"><span id="kpi-population-note">—</span></div>
+        </article>
+      </section>
+
+      <section class="content-grid" id="section-spatial">
+        <article class="panel map-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">SPATIAL BEHAVIOR</p><h2>ความหนาแน่นเชิงพื้นที่</h2></div>
+            <div class="layer-toggle">
+              <label><input type="checkbox" id="layer-poi" checked> ธุรกิจท่องเที่ยว</label>
+              <label><input type="checkbox" id="layer-traffic" checked> ปริมาณรถรายแยก</label>
+            </div>
+          </div>
+          <div id="map"></div>
+          <div class="map-caption">
+            <span><b id="map-poi-count">—</b> สถานที่ (OpenStreetMap) · <b id="map-zone-count">—</b> แยกที่มีพิกัด</span>
+            <span>ความร้อน = ความหนาแน่นธุรกิจ · ขนาดวงกลม = ปริมาณรถ</span>
+          </div>
+        </article>
+        <article class="panel ranking-panel">
+          <div class="panel-heading"><div><p class="eyebrow">TRAFFIC BY INTERSECTION</p><h2>แยกที่มีปริมาณรถสูงสุด</h2></div></div>
+          <div id="ranking-list" class="ranking-list"><div class="loading">กำลังอ่านข้อมูล...</div></div>
+        </article>
+      </section>
+
+      <section class="content-grid lower-grid" id="section-trends">
+        <article class="panel chart-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">VISITOR FLOW</p><h2>นักท่องเที่ยวรายเดือน เทียบปริมาณรถ</h2></div>
+            <span class="chart-note">คน/เดือน · คัน/เดือน</span>
+          </div>
+          <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
+        </article>
+        <article class="panel recommendation-panel">
+          <div class="panel-heading"><div><p class="eyebrow">DECISION SIGNALS</p><h2>คำแนะนำเชิงปฏิบัติ</h2></div></div>
+          <div id="recommendation-list" class="recommendation-list"><div class="loading">กำลังประมวลผล...</div></div>
+        </article>
       </section>
 
       <section class="content-grid lower-grid">
-        <article class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">VISITOR FLOW</p><h2>จังหวะการเดินทาง 30 วัน</h2></div><span class="chart-note">คน / วัน</span></div><div class="chart-wrap"><canvas id="trend-chart"></canvas></div></article>
-        <article class="panel recommendation-panel"><div class="panel-heading"><div><p class="eyebrow">DECISION SIGNALS</p><h2>คำแนะนำเชิงปฏิบัติ</h2></div><span class="ai-badge">AI READY</span></div><div id="recommendation-list" class="recommendation-list"><div class="loading">กำลังประมวลผล...</div></div></article>
+        <article class="panel">
+          <div class="panel-heading"><div><p class="eyebrow">UPCOMING</p><h2>วันหยุดและพยากรณ์อากาศ 7 วัน</h2></div></div>
+          <div class="forecast-strip" id="forecast-strip"><div class="loading">กำลังอ่านพยากรณ์...</div></div>
+          <div class="holiday-list" id="holiday-list"></div>
+        </article>
+        <article class="panel">
+          <div class="panel-heading"><div><p class="eyebrow">BUSINESS MIX</p><h2>ประเภทธุรกิจท่องเที่ยว</h2></div></div>
+          <div class="chart-wrap short"><canvas id="poi-chart"></canvas></div>
+        </article>
       </section>
-      <footer>ต้นแบบระบบศูนย์ข้อมูลการท่องเที่ยวพัทยา <span>•</span> ข้อมูลจำลองสำหรับการทดสอบระบบ</footer>
+
+      <section class="content-grid lower-grid" id="section-context">
+        <article class="panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">POPULATION</p><h2>ประชากรแฝงจำแนกตามกลุ่ม</h2></div>
+            <label class="select-wrap"><span>กลุ่ม</span><select id="demographic-category"></select></label>
+          </div>
+          <div class="chart-wrap short"><canvas id="demographic-chart"></canvas></div>
+        </article>
+        <article class="panel" id="section-sources">
+          <div class="panel-heading"><div><p class="eyebrow">PROVENANCE</p><h2>แหล่งข้อมูลที่เชื่อมต่อ</h2></div></div>
+          <div id="source-list" class="source-list"><div class="loading">กำลังอ่าน...</div></div>
+        </article>
+      </section>
+
+      <footer>ต้นแบบระบบศูนย์ข้อมูลการท่องเที่ยวพัทยา <span>•</span> ทุกตัวเลขบนหน้านี้มาจากข้อมูลจริงที่นำเข้าแล้ว ไม่มีข้อมูลจำลอง</footer>
     </main>
   </div>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

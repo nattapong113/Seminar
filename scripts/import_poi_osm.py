@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 import sys
 from pathlib import Path
 from typing import Optional
@@ -10,11 +9,13 @@ from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+import psycopg
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.database import get_connection, initialize_database
+from app.database import connect, initialize_database
 
 SOURCE_NAME = "OpenStreetMap Overpass API"
 # Pattaya bounding box: south, west, north, east
@@ -62,75 +63,77 @@ def build_address(tags: dict) -> Optional[str]:
     return " ".join(parts) if parts else None
 
 
-def ensure_data_source(connection: sqlite3.Connection, name: str, source_type: str, endpoint: Optional[str] = None) -> int:
-    row = connection.execute("SELECT id FROM data_sources WHERE name = ?", (name,)).fetchone()
+def ensure_data_source(connection: psycopg.Connection, name: str, source_type: str, endpoint: Optional[str] = None) -> int:
+    row = connection.execute("SELECT id FROM data_sources WHERE name = %s", (name,)).fetchone()
     if row:
-        return row[0]
-    cursor = connection.execute(
-        "INSERT INTO data_sources (name, source_type, endpoint) VALUES (?, ?, ?)",
+        return row["id"]
+    return connection.execute(
+        "INSERT INTO data_sources (name, source_type, endpoint) VALUES (%s, %s, %s) RETURNING id",
         (name, source_type, endpoint),
-    )
-    return cursor.lastrowid
+    ).fetchone()["id"]
 
 
-def import_poi(connection: sqlite3.Connection, payload: dict) -> tuple[int, int]:
+def import_poi(connection: psycopg.Connection, payload: dict) -> tuple[int, int]:
     data_source_id = ensure_data_source(connection, SOURCE_NAME, "open_api", OVERPASS_ENDPOINTS[0])
     elements = [el for el in payload.get("elements", []) if el.get("tags", {}).get("name")]
 
-    import_cursor = connection.execute(
+    import_id = connection.execute(
         """
         INSERT INTO imports (data_source_id, import_type, source_name, source_url, records_total, records_success, records_failed)
-        VALUES (?, 'api', ?, ?, ?, 0, 0)
+        VALUES (%s, 'api', %s, %s, %s, 0, 0)
+        RETURNING id
         """,
         (data_source_id, SOURCE_NAME, OVERPASS_ENDPOINTS[0], len(elements)),
-    )
-    import_id = import_cursor.lastrowid
+    ).fetchone()["id"]
 
-    success = 0
-    failed = 0
+    # เตรียมแถวใน Python ก่อนแล้วเขียนรวดเดียว ฐานข้อมูลอยู่บนคลาวด์ ถ้าเขียนทีละแถวจะช้ามาก
+    values = []
+    errors = []
     for element in elements:
         tags = element.get("tags", {})
         category = tags.get("tourism") or tags.get("amenity") or tags.get("shop") or "other"
         try:
-            connection.execute(
-                """
-                INSERT INTO poi_businesses
-                    (data_source_id, external_id, name, category, address, latitude, longitude, phone, website)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(data_source_id, external_id) DO UPDATE SET
-                    name = excluded.name,
-                    category = excluded.category,
-                    address = excluded.address,
-                    latitude = excluded.latitude,
-                    longitude = excluded.longitude,
-                    phone = excluded.phone,
-                    website = excluded.website
-                """,
-                (
-                    data_source_id,
-                    str(element["id"]),
-                    tags.get("name"),
-                    category,
-                    build_address(tags),
-                    element.get("lat"),
-                    element.get("lon"),
-                    tags.get("phone") or tags.get("contact:phone"),
-                    tags.get("website") or tags.get("contact:website"),
-                ),
-            )
-            success += 1
-        except Exception as exc:
-            failed += 1
-            connection.execute(
-                "INSERT INTO import_errors (import_id, error_text) VALUES (?, ?)",
-                (import_id, f"node {element.get('id')}: {exc}"),
-            )
+            values.append((
+                data_source_id,
+                str(element["id"]),
+                tags.get("name"),
+                category,
+                build_address(tags),
+                element["lat"],
+                element["lon"],
+                tags.get("phone") or tags.get("contact:phone"),
+                tags.get("website") or tags.get("contact:website"),
+            ))
+        except KeyError as exc:  # node ที่ไม่มี id หรือพิกัด ใช้บนแผนที่ไม่ได้
+            errors.append(f"node {element.get('id')}: ไม่มีฟิลด์ {exc}")
+
+    with connection.cursor() as cursor:
+        cursor.executemany(
+            """
+            INSERT INTO poi_businesses
+                (data_source_id, external_id, name, category, address, latitude, longitude, phone, website)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT(data_source_id, external_id) DO UPDATE SET
+                name = excluded.name,
+                category = excluded.category,
+                address = excluded.address,
+                latitude = excluded.latitude,
+                longitude = excluded.longitude,
+                phone = excluded.phone,
+                website = excluded.website
+            """,
+            values,
+        )
+        cursor.executemany(
+            "INSERT INTO import_errors (import_id, error_text) VALUES (%s, %s)",
+            [(import_id, error) for error in errors],
+        )
 
     connection.execute(
-        "UPDATE imports SET records_success = ?, records_failed = ? WHERE id = ?",
-        (success, failed, import_id),
+        "UPDATE imports SET records_success = %s, records_failed = %s WHERE id = %s",
+        (len(values), len(errors), import_id),
     )
-    return success, failed
+    return len(values), len(errors)
 
 
 def main() -> None:
@@ -143,12 +146,8 @@ def main() -> None:
         raise SystemExit(f"ดึงข้อมูลสถานที่ไม่สำเร็จ: {exc}")
 
     initialize_database()
-    connection = get_connection()
-    try:
+    with connect() as connection:
         success, failed = import_poi(connection, payload)
-        connection.commit()
-    finally:
-        connection.close()
     print(f"นำเข้าสถานที่ท่องเที่ยว/ธุรกิจสำเร็จ {success} รายการ (ผิดพลาด {failed})")
 
 

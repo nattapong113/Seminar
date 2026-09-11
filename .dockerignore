@@ -10,6 +10,8 @@ venv/
 .gitignore
 *.sqlite3
 *.db
+# มีรหัสผ่าน Supabase ห้าม bake ลง image (ตอนรันด้วย docker compose ไฟล์นี้ถูก mount เข้าไปอยู่แล้ว)
+.env
 .pip-wheel-cache
 
 # IDE files

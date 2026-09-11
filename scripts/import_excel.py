@@ -3,13 +3,18 @@ from __future__ import annotations
 import argparse
 import math
 import re
-import sqlite3
+import sys
 from pathlib import Path
 from typing import Any
 
+import psycopg
 from openpyxl import load_workbook
 
-from app.database import DB_PATH, get_connection, initialize_database
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.database import connect, initialize_database
 
 PATTAYA_SHEET = "พัทยา ชลบุรี"
 YEAR_PATTERN = re.compile(r"(?:19|20)\d{2}")
@@ -97,61 +102,57 @@ def extract_metrics(worksheet: Any, source_file: str) -> list[tuple[Any, ...]]:
     return metrics
 
 
-def import_workbook(workbook_path: Path, connection: sqlite3.Connection) -> dict[str, int]:
+def import_workbook(workbook_path: Path, connection: psycopg.Connection) -> dict[str, int]:
     workbook = load_workbook(workbook_path, read_only=True, data_only=True)
     source_file = workbook_path.name
     imported_cells = 0
     imported_metrics = 0
 
-    connection.execute("DELETE FROM raw_excel_cells WHERE source_file = ?", (source_file,))
-    connection.execute("DELETE FROM pattaya_report_metrics WHERE source_file = ?", (source_file,))
+    connection.execute("DELETE FROM raw_excel_cells WHERE source_file = %s", (source_file,))
+    connection.execute("DELETE FROM pattaya_report_metrics WHERE source_file = %s", (source_file,))
 
-    for worksheet in workbook.worksheets:
-        cells = collect_sheet_cells(worksheet, source_file)
-        connection.executemany(
-            """
-            INSERT INTO raw_excel_cells
-                (source_file, sheet_name, row_number, column_number, cell_value)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            cells,
-        )
-        imported_cells += len(cells)
-
-        if worksheet.title == PATTAYA_SHEET:
-            metrics = extract_metrics(worksheet, source_file)
-            connection.executemany(
+    with connection.cursor() as cursor:
+        for worksheet in workbook.worksheets:
+            cells = collect_sheet_cells(worksheet, source_file)
+            cursor.executemany(
                 """
-                INSERT INTO pattaya_report_metrics
-                    (source_file, sheet_name, metric_label, metric_value, unit,
-                     year, quarter, source_row)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO raw_excel_cells
+                    (source_file, sheet_name, row_number, column_number, cell_value)
+                VALUES (%s, %s, %s, %s, %s)
                 """,
-                metrics,
+                cells,
             )
-            imported_metrics += len(metrics)
+            imported_cells += len(cells)
 
-    connection.commit()
+            if worksheet.title == PATTAYA_SHEET:
+                metrics = extract_metrics(worksheet, source_file)
+                cursor.executemany(
+                    """
+                    INSERT INTO pattaya_report_metrics
+                        (source_file, sheet_name, metric_label, metric_value, unit,
+                         year, quarter, source_row)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    metrics,
+                )
+                imported_metrics += len(metrics)
+
     workbook.close()
     return {"sheets": len(workbook.sheetnames), "cells": imported_cells, "metrics": imported_metrics}
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Import tourism Excel reports into SQLite staging tables")
+    parser = argparse.ArgumentParser(description="Import tourism Excel reports into staging tables")
     parser.add_argument("workbook", type=Path, help="Path to .xlsx workbook")
     args = parser.parse_args()
     if not args.workbook.exists():
         raise SystemExit(f"ไม่พบไฟล์: {args.workbook}")
 
     initialize_database()
-    connection = get_connection()
-    try:
+    with connect() as connection:
         result = import_workbook(args.workbook, connection)
-    finally:
-        connection.close()
     print(f"นำเข้าสำเร็จ: {args.workbook.name}")
     print(f"ชีต: {result['sheets']} | cells: {result['cells']} | metrics พัทยา: {result['metrics']}")
-    print(f"ฐานข้อมูล: {DB_PATH}")
 
 
 if __name__ == "__main__":
