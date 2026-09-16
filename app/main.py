@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
@@ -14,12 +15,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import analytics
 from .database import close_pool, get_pool, initialize_database
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PATTAYA_LATITUDE = 12.9236
 PATTAYA_LONGITUDE = 100.8694
 USER_AGENT = "PattayaSmartTourism/0.1 (academic prototype)"
+THAI_MONTH_NAMES = (
+    "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+    "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
+)
 
 # วันนี้ตามเวลาไทย ฐานข้อมูล Supabase ใช้เวลา UTC ถ้าใช้ CURRENT_DATE ตรง ๆ ช่วงตี 0-7 จะได้วันของเมื่อวาน
 TODAY_BANGKOK = "(now() AT TIME ZONE 'Asia/Bangkok')::date"
@@ -77,6 +83,43 @@ def cached_fetch(key: str, url: str, ttl_seconds: int) -> Any:
         payload = json.load(response)
     _external_cache[key] = (now, payload)
     return payload
+
+
+# แคชผลวิเคราะห์ ข้อมูลนำเข้าเปลี่ยนไม่บ่อย แต่การเทียบหลายวิธีต้องคำนวณซ้ำหลายรอบ
+_analysis_cache: dict[str, tuple[float, Any]] = {}
+ANALYSIS_TTL_SECONDS = 900
+
+
+def cached_analysis(key: str, build) -> Any:
+    now = time.time()
+    cached = _analysis_cache.get(key)
+    if cached and now - cached[0] < ANALYSIS_TTL_SECONDS:
+        return cached[1]
+    value = build()
+    _analysis_cache[key] = (now, value)
+    return value
+
+
+def monthly_tourism_series() -> tuple[list[str], list[float]]:
+    """อนุกรมจำนวนนักท่องเที่ยวรายเดือน คืน (ป้ายเดือน YYYY-MM, จำนวนคน) เรียงตามเวลา"""
+    rows = query(
+        """SELECT calendar_year, month_id, number_of_tourists
+           FROM tourism_monthly ORDER BY calendar_year, month_id"""
+    )
+    labels = [f"{row['calendar_year']:04d}-{row['month_id']:02d}" for row in rows]
+    return labels, [float(row["number_of_tourists"]) for row in rows]
+
+
+def shift_month(label: str, steps: int) -> str:
+    """เลื่อนป้ายเดือน YYYY-MM ไปข้างหน้า steps เดือน"""
+    index = int(label[:4]) * 12 + int(label[5:7]) - 1 + steps
+    return f"{index // 12:04d}-{index % 12 + 1:02d}"
+
+
+def months_behind_today(label: str) -> int:
+    """ข้อมูลล่าสุดช้ากว่าเดือนปัจจุบัน (เวลาไทย) กี่เดือน"""
+    today = datetime.now(timezone(timedelta(hours=7)))
+    return (today.year * 12 + today.month) - (int(label[:4]) * 12 + int(label[5:7]))
 
 
 # ---------------------------------------------------------------- หน้าเว็บ
@@ -402,7 +445,120 @@ def upcoming_holidays(limit: int = Query(default=5, ge=1, le=50)) -> list[dict]:
     )
 
 
+# ---------------------------------------------------------------- พยากรณ์ / ผลกระทบ
+
+FORECAST_SOURCE = "Open Data เมืองพัทยา ชุดข้อมูลนักท่องเที่ยวเดินทางลงเกาะล้าน (172)"
+FORECAST_CAVEATS = [
+    "ข้อมูลมีเพียง 48 เดือน (2022-2025) ยังนับว่าน้อยสำหรับการพยากรณ์",
+    "ครอบคลุมเฉพาะผู้เดินทางลงเกาะล้าน ไม่ใช่นักท่องเที่ยวทั้งเมืองพัทยา",
+    "รูปแบบฤดูกาลยังไม่คงที่เพราะเพิ่งฟื้นจากโควิด ปี 2022 เดือนพีคสูงกว่าค่าเฉลี่ยทั้งปี 69% แต่ปี 2025 เหลือ 18%",
+    "ช่วงประมาณกว้าง ใช้วางแผนกำลังคนแบบคร่าว ๆ ได้ แต่ไม่ควรใช้เป็นตัวเลขผูกพัน",
+]
+IMPACT_CAVEATS = [
+    "เป็นความสัมพันธ์ ไม่ใช่การพิสูจน์เหตุและผล",
+    "ข้อมูลนักท่องเที่ยวเป็นรายเดือน จึงดูผลของฝนรายวันหรือวันหยุดแต่ละวันไม่ได้",
+    "วันหยุดในฐานข้อมูลมีตั้งแต่ปี 2024 การวิเคราะห์วันหยุดจึงใช้เดือนน้อยกว่าการวิเคราะห์ฝน",
+    "ฝนเป็นข้อมูลวิเคราะห์ย้อนหลัง (ERA5) ของจุดเดียวกลางเมืองพัทยา ไม่ใช่ค่าเฉลี่ยทั้งเมือง",
+]
+
+
+@app.get("/api/forecast/tourism")
+def tourism_forecast(months: int = Query(default=6, ge=1, le=12)) -> dict:
+    """พยากรณ์นักท่องเที่ยวรายเดือน เลือกวิธีจากปีตรวจสอบ และรายงานความแม่นจากปีทดสอบที่ไม่ถูกใช้เลือกวิธี"""
+    labels, series = monthly_tourism_series()
+    if not series:
+        return {"error": "ยังไม่มีข้อมูลนักท่องเที่ยวในฐานข้อมูล", "caveats": FORECAST_CAVEATS}
+    result = cached_analysis(
+        f"forecast:{months}:{len(series)}:{labels[-1]}",
+        lambda: analytics.forecast_series(series, months),
+    )
+    if "error" in result:
+        return {"error": result["error"], "caveats": FORECAST_CAVEATS}
+
+    indices = analytics.seasonal_indices(series)
+    first_month = int(labels[0][5:7])
+    profile = sorted(
+        ({"month_id": (first_month - 1 + position) % 12 + 1, "index": round(value, 3)}
+         for position, value in enumerate(indices)),
+        key=lambda item: item["month_id"],
+    )
+    # พยากรณ์เริ่มนับจากเดือนถัดจากข้อมูลล่าสุด ไม่ใช่เดือนปัจจุบัน ถ้าข้อมูลค้างจะเห็นได้จากค่านี้
+    lag = months_behind_today(labels[-1])
+    caveats = list(FORECAST_CAVEATS)
+    if lag >= 2:
+        caveats.insert(0, f"ข้อมูลล่าสุดคือเดือน {labels[-1]} ช้ากว่าปัจจุบัน {lag} เดือน พยากรณ์จึงเริ่มจากเดือนถัดจากนั้น")
+    return {
+        "history": [{"month": month, "visitors": round(value)} for month, value in zip(labels, series)],
+        "forecast": [{"month": shift_month(labels[-1], point["step"]), **point} for point in result["points"]],
+        "model": result["model"],
+        "accuracy": result["accuracy"],
+        "seasonal_profile": profile,
+        "data": {"last_month": labels[-1], "months_behind_today": lag, "months_available": len(series)},
+        "caveats": caveats,
+        "source": FORECAST_SOURCE,
+    }
+
+
+def impact_analysis() -> dict:
+    """วัดความสัมพันธ์ของฝนและวันหยุดกับจำนวนนักท่องเที่ยว หลังตัดฤดูกาลและแนวโน้มออกแล้ว"""
+    labels, series = monthly_tourism_series()
+    if len(series) < 2 * analytics.MONTHS_IN_YEAR:
+        return {"error": "ข้อมูลนักท่องเที่ยวน้อยกว่า 24 เดือน ยังวิเคราะห์ผลกระทบไม่ได้", "caveats": IMPACT_CAVEATS}
+
+    visitor_index = analytics.deseasonalized_index(series)
+    rain_by_month = {row["month"]: float(row["rain_mm"] or 0) for row in query(
+        """SELECT to_char(date, 'YYYY-MM') AS month, SUM(precipitation_mm) AS rain_mm
+           FROM weather_daily GROUP BY 1"""
+    )}
+    holidays_by_month = {row["month"]: row["days"] for row in query(
+        "SELECT to_char(date, 'YYYY-MM') AS month, COUNT(*) AS days FROM public_holidays GROUP BY 1"
+    )}
+
+    rain_months = [(month, index) for month, index in zip(labels, visitor_index) if month in rain_by_month]
+    rain = analytics.rain_impact(
+        [index for _, index in rain_months],
+        [rain_by_month[month] for month, _ in rain_months],
+        [month for month, _ in rain_months],
+    ) if len(rain_months) >= analytics.MONTHS_IN_YEAR else None
+
+    # วันหยุดเริ่มมีข้อมูลปี 2024 จึงตัดเฉพาะช่วงที่มีข้อมูลจริง ไม่นับเดือนที่ไม่มีข้อมูลว่า "ไม่มีวันหยุด"
+    first_holiday_month = min(holidays_by_month) if holidays_by_month else None
+    holiday_months = [
+        (month, index) for month, index in zip(labels, visitor_index)
+        if first_holiday_month and month >= first_holiday_month
+    ]
+    holidays = analytics.holiday_impact(
+        [index for _, index in holiday_months],
+        [holidays_by_month.get(month, 0) for month, _ in holiday_months],
+        [month for month, _ in holiday_months],
+    ) if len(holiday_months) >= analytics.MONTHS_IN_YEAR else None
+
+    return {
+        "method": (
+            "ตัดฤดูกาล (ratio-to-moving-average) และแนวโน้มเชิงเส้นออกจากจำนวนนักท่องเที่ยวก่อน "
+            "เหลือเป็นดัชนี 1.0 = เท่าที่ควรจะเป็น แล้ววัดความสัมพันธ์กับฝนที่มากกว่าปกติของเดือนนั้น และจำนวนวันหยุด"
+        ),
+        "rain": rain,
+        "holidays": holidays,
+        "caveats": IMPACT_CAVEATS,
+        "sources": [FORECAST_SOURCE, "Open-Meteo Archive (ERA5)", "World Holidays API (TH)"],
+    }
+
+
+@app.get("/api/impact")
+def impact() -> dict:
+    labels, series = monthly_tourism_series()
+    return cached_analysis(f"impact:{len(series)}:{labels[-1] if labels else '-'}", impact_analysis)
+
+
 # ---------------------------------------------------------------- คำแนะนำ
+
+# สมมติฐานของคำแนะนำเรื่องกำลังคนและสต็อก เขียนไว้ตรงนี้ให้เห็นชัดว่าไม่ได้มาจากข้อมูลธุรกิจจริง
+# เพราะฐานข้อมูลไม่มีข้อมูลร้านค้า พนักงาน หรือยอดขาย
+STAFFING_ASSUMPTION = "สมมติว่ากำลังคนที่ต้องใช้แปรผันตรงกับจำนวนนักท่องเที่ยว"
+STOCK_ASSUMPTION = "สมมติว่าสต็อกที่ต้องเตรียมแปรผันตรงกับจำนวนนักท่องเที่ยว และเผื่อของขาดไว้ที่ขอบบนของช่วงประมาณ"
+# ต่ำกว่านี้ถือว่าเปลี่ยนแปลงน้อยกว่าความคลาดเคลื่อนของแบบจำลอง ไม่ควรสั่งปรับกำลังคน
+MATERIAL_CHANGE_PERCENT = 5
 
 
 def _weather_signal() -> Optional[dict]:
@@ -419,6 +575,94 @@ def _weather_signal() -> Optional[dict]:
 def recommendations() -> list[dict]:
     """คำแนะนำที่อนุมานจากสัญญาณข้อมูลจริง ทุกข้อระบุตัวเลขและแหล่งที่มาที่ใช้ตัดสิน"""
     results: list[dict] = []
+
+    forecast = tourism_forecast(months=6)
+    if forecast.get("forecast"):
+        next_month = forecast["forecast"][0]
+        history = {row["month"]: row["visitors"] for row in forecast["history"]}
+        accuracy = forecast["accuracy"]
+        model_source = (
+            f"แบบจำลอง{forecast['model']['label']} คลาดเคลื่อนในปีทดสอบ {accuracy['test_mape_percent']}% "
+            f"(วิธีพื้นฐาน {accuracy['seasonal_naive_mape_percent']}%)"
+        )
+        baseline = history.get(shift_month(next_month["month"], -12))
+        if baseline:
+            change = (next_month["visitors"] / baseline - 1) * 100
+            action = (
+                f"ควร{'เพิ่ม' if change > 0 else 'ลด'}กำลังคนราว {abs(change):.0f}%"
+                if abs(change) >= MATERIAL_CHANGE_PERCENT
+                else "ยังไม่ต้องปรับกำลังคน เพราะเปลี่ยนแปลงน้อยกว่าความคลาดเคลื่อนของแบบจำลอง"
+            )
+            results.append({
+                "title": f"วางแผนกำลังคนเดือน {next_month['month']} (เดือนถัดจากข้อมูลล่าสุด)",
+                "detail": (
+                    f"พยากรณ์ {next_month['visitors']:,} คน เทียบเดือนเดียวกันปีก่อนที่ {baseline:,} คน "
+                    f"({change:+.1f}%) {action}"
+                ),
+                "signal": "พยากรณ์นักท่องเที่ยว",
+                "assumption": STAFFING_ASSUMPTION,
+                "source": model_source,
+            })
+        if next_month.get("upper"):
+            buffer_percent = (next_month["upper"] / next_month["visitors"] - 1) * 100
+            results.append({
+                "title": f"เตรียมสต็อกเดือน {next_month['month']} ให้รองรับถึง {next_month['upper']:,} คน",
+                "detail": (
+                    f"ค่าพยากรณ์อยู่ที่ {next_month['visitors']:,} คน แต่ขอบบนของช่วงประมาณ 95% คือ "
+                    f"{next_month['upper']:,} คน การเผื่อสต็อกอีก {buffer_percent:.0f}% จะกันของขาดกรณีคนมากกว่าคาด"
+                ),
+                "signal": "ช่วงความไม่แน่นอน",
+                "assumption": STOCK_ASSUMPTION,
+                "source": model_source,
+            })
+        profile = {item["month_id"]: item["index"] for item in forecast["seasonal_profile"]}
+        if profile:
+            peak_month = max(profile, key=lambda month_id: profile[month_id])
+            results.append({
+                "title": f"เดือน{THAI_MONTH_NAMES[peak_month - 1]}เป็นเดือนที่คนมากที่สุดตามรูปฤดูกาล",
+                "detail": (
+                    f"เฉลี่ย 4 ปีที่ผ่านมา สูงกว่าค่าเฉลี่ยทั้งปี {(profile[peak_month] - 1) * 100:.0f}% "
+                    "ควรวางแผนกำลังคนและสต็อกล่วงหน้าก่อนถึงเดือนนี้"
+                ),
+                "signal": "รูปแบบฤดูกาล",
+                "source": FORECAST_SOURCE,
+            })
+
+    lag = forecast.get("data", {}).get("months_behind_today", 0)
+    if lag >= 2:
+        results.append({
+            "title": f"ข้อมูลนักท่องเที่ยวค้างอยู่ที่เดือน {forecast['data']['last_month']}",
+            "detail": (
+                f"ช้ากว่าปัจจุบัน {lag} เดือน คำแนะนำทั้งหมดที่อิงการพยากรณ์จึงเป็นการต่อยอดจากข้อมูลเก่า "
+                "ควรนำเข้าข้อมูลเดือนล่าสุดจาก Open Data เมืองพัทยาก่อนนำไปใช้ตัดสินใจจริง"
+            ),
+            "signal": "คุณภาพข้อมูล",
+            "source": FORECAST_SOURCE,
+        })
+
+    analysis = impact()
+    rain_effect = (analysis or {}).get("rain")
+    if rain_effect and rain_effect.get("correlation") is not None:
+        if rain_effect["significant"]:
+            detail = (
+                f"เมื่อฝนมากกว่าปกติของเดือนนั้น 100 มม. จำนวนคนต่างไปจากที่ควรเป็น {rain_effect['effect_percent']:+.1f}% "
+                f"(r = {rain_effect['correlation']}, ช่วงความเชื่อมั่น {rain_effect['correlation_ci_95']}, "
+                f"{rain_effect['months_used']} เดือน) ควรเตรียมกิจกรรมในร่มไว้รองรับ"
+            )
+            title = "เดือนที่ฝนมากกว่าปกติมีคนน้อยกว่าที่ควรเป็น"
+        else:
+            detail = (
+                f"ทดสอบแล้วยังไม่พบความสัมพันธ์ชัดเจน (r = {rain_effect['correlation']}, "
+                f"ช่วงความเชื่อมั่นคร่อมศูนย์, {rain_effect['months_used']} เดือน) จึงยังไม่ควรใช้ฝนวางแผนกำลังคน"
+            )
+            title = "ยังสรุปผลของฝนต่อจำนวนนักท่องเที่ยวไม่ได้"
+        results.append({
+            "title": title,
+            "detail": detail,
+            "signal": "ผลกระทบจากฝน",
+            "assumption": "เป็นความสัมพันธ์หลังตัดฤดูกาลออกแล้ว ไม่ใช่การพิสูจน์เหตุและผล",
+            "source": "Open-Meteo Archive (ERA5) + " + FORECAST_SOURCE,
+        })
 
     busiest = query(
         """SELECT intersection_name, latitude, longitude, SUM(vehicle_volume) AS vehicle_volume

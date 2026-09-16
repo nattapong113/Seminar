@@ -33,3 +33,24 @@ a.nav-item{text-decoration:none}
 @media(max-width:700px){.forecast-strip{grid-template-columns:repeat(4,1fr)}.weather-live{border-left:0;padding-left:0;white-space:normal}}
 .chart-panel{display:flex;flex-direction:column}.chart-panel .panel-heading{flex-shrink:0}.chart-panel .chart-wrap{flex:1;min-height:220px;position:relative}
 .content-grid>*,.source-list>*,.holiday-list>*,.ranking-list>*{min-width:0}.source-item>div{min-width:0}.holiday-name{min-width:0}
+.accuracy-strip{display:flex;flex-wrap:wrap;gap:14px;border-top:1px solid var(--line);margin-top:12px;padding-top:10px}
+.accuracy-item{display:grid;gap:2px}
+.accuracy-item span{font:9px 'DM Mono';color:#9ba7a9;letter-spacing:.5px}
+.accuracy-item b{font:500 13px 'DM Mono'}
+.accuracy-item.win b{color:var(--green)}
+.accuracy-item.lose b{color:var(--coral)}
+.forecast-table{display:grid;gap:1px;margin-top:10px}
+.forecast-row{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:baseline;padding:5px 0;border-bottom:1px solid #f1f4f2;font-size:11px}
+.forecast-row:last-child{border-bottom:0}
+.forecast-row b{font:500 12px 'DM Mono'}
+.forecast-row .range{font:9px 'DM Mono';color:#9ba7a9;text-align:right}
+.forecast-row .month{font:10px 'DM Mono';color:var(--blue)}
+.caveat{font-size:10px;color:#9ba7a9;line-height:1.6;margin:10px 0 0;border-top:1px dashed var(--line);padding-top:9px}
+.impact-tiles{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px}
+.impact-tile{background:#f7faf8;padding:10px 12px;border-left:3px solid var(--blue)}
+.impact-tile.is-weak{border-color:#c3cdc9}
+.impact-tile span{display:block;font:9px 'DM Mono';color:#8a9699}
+.impact-tile b{display:block;font:500 17px 'DM Mono';margin:4px 0 3px;letter-spacing:-.5px}
+.impact-tile em{display:block;font-style:normal;font-size:10px;color:#718087;line-height:1.5}
+.recommendation-item .assumption{display:block;font-size:10px;color:#8a9699;margin-top:5px;padding-left:9px;border-left:2px solid #e4eae7}
+@media(max-width:700px){.impact-tiles{grid-template-columns:1fr}}
