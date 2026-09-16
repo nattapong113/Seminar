@@ -19,6 +19,7 @@
         <a class="nav-item active" href="#section-overview"><span class="nav-icon">◉</span>ภาพรวมเมือง</a>
         <a class="nav-item" href="#section-spatial"><span class="nav-icon">⌁</span>พฤติกรรมเชิงพื้นที่</a>
         <a class="nav-item" href="#section-trends"><span class="nav-icon">↗</span>แนวโน้มและพยากรณ์</a>
+        <a class="nav-item" href="#section-forecast"><span class="nav-icon">⌥</span>พยากรณ์และผลกระทบ</a>
         <a class="nav-item" href="#section-context"><span class="nav-icon">▤</span>บริบทเมืองและประชากร</a>
         <a class="nav-item" href="#section-sources"><span class="nav-icon">⛁</span>แหล่งข้อมูล</a>
       </nav>
@@ -93,6 +94,28 @@
         <article class="panel recommendation-panel">
           <div class="panel-heading"><div><p class="eyebrow">DECISION SIGNALS</p><h2>คำแนะนำเชิงปฏิบัติ</h2></div></div>
           <div id="recommendation-list" class="recommendation-list"><div class="loading">กำลังประมวลผล...</div></div>
+        </article>
+      </section>
+
+      <section class="content-grid lower-grid" id="section-forecast">
+        <article class="panel chart-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">FORECAST</p><h2>พยากรณ์นักท่องเที่ยวรายเดือน</h2></div>
+            <span class="chart-note" id="forecast-model">—</span>
+          </div>
+          <div class="chart-wrap"><canvas id="forecast-chart"></canvas></div>
+          <div class="accuracy-strip" id="forecast-accuracy"></div>
+          <div class="forecast-table" id="forecast-table"></div>
+          <p class="caveat" id="forecast-caveats"></p>
+        </article>
+        <article class="panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">IMPACT</p><h2>ผลของฝนและวันหยุด</h2></div>
+            <span class="chart-note">หลังตัดฤดูกาลออก</span>
+          </div>
+          <div class="impact-tiles" id="impact-tiles"><div class="loading">กำลังวิเคราะห์...</div></div>
+          <div class="chart-wrap short"><canvas id="impact-chart"></canvas></div>
+          <p class="caveat" id="impact-caveats"></p>
         </article>
       </section>
 
