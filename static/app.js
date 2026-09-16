@@ -10,6 +10,8 @@ const state = { demographics: [] };
 
 const THAI_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 const PALETTE = ['#ee745b', '#4b90a9', '#e5b84d', '#5da17d', '#9b7fb5', '#c4826a', '#6aaeb0', '#b0616e'];
+const ACTUAL_COLOR = '#ee745b';
+const FORECAST_COLOR = '#1f7fa3';
 
 const setText = (id, value) => { document.querySelector(`#${id}`).textContent = value; };
 
@@ -138,6 +140,7 @@ function renderRecommendations(items) {
       <span class="signal">${item.signal}</span>
       <strong>${item.title}</strong>
       <p>${item.detail}</p>
+      ${item.assumption ? `<span class="assumption">${item.assumption}</span>` : ''}
       <cite>${item.source}</cite>
     </div>`).join('');
 }
@@ -277,10 +280,153 @@ function renderSources(sources) {
     </div>`).join('');
 }
 
+// ---------------------------------------------------------------- พยากรณ์ / ผลกระทบ
+
+const monthLabel = (month) => `${THAI_MONTHS[Number(month.slice(5, 7)) - 1]} ${String(month.slice(0, 4)).slice(2)}`;
+
+function renderTourismForecast(data) {
+  if (data.error) {
+    document.querySelector('#forecast-model').textContent = data.error;
+    return;
+  }
+  // แสดงย้อนหลัง 24 เดือนพอให้เห็นรูปฤดูกาล ถ้าใส่ทั้ง 48 เดือนแกนจะแน่นจนอ่านไม่ออก
+  const history = data.history.slice(-24);
+  const labels = [...history, ...data.forecast].map((row) => monthLabel(row.month));
+  const pad = new Array(history.length - 1).fill(null);
+  const actual = [...history.map((row) => row.visitors), ...data.forecast.map(() => null)];
+  const forecast = [...pad, history[history.length - 1].visitors, ...data.forecast.map((row) => row.visitors)];
+  const upper = [...pad, history[history.length - 1].visitors, ...data.forecast.map((row) => row.upper)];
+  const lower = [...pad, history[history.length - 1].visitors, ...data.forecast.map((row) => row.lower)];
+
+  charts.forecast?.destroy();
+  charts.forecast = new Chart(document.querySelector('#forecast-chart'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'ช่วงประมาณ 95%', data: upper, borderWidth: 0, pointRadius: 0, fill: '+1',
+          backgroundColor: '#1f7fa31f', order: 3 },
+        { label: 'ขอบล่าง', data: lower, borderWidth: 0, pointRadius: 0, fill: false, order: 3 },
+        { label: 'จำนวนจริง', data: actual, borderColor: ACTUAL_COLOR, backgroundColor: ACTUAL_COLOR,
+          borderWidth: 2, pointRadius: 0, tension: 0.3, order: 1 },
+        { label: 'พยากรณ์', data: forecast, borderColor: FORECAST_COLOR, backgroundColor: FORECAST_COLOR,
+          borderWidth: 2, borderDash: [5, 4], pointRadius: 3, tension: 0.3, order: 2 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          labels: {
+            font: { family: 'IBM Plex Sans Thai', size: 10 }, boxWidth: 10,
+            filter: (item) => item.text !== 'ขอบล่าง',
+          },
+        },
+        tooltip: {
+          callbacks: {
+            label: (context) => (context.parsed.y === null ? null
+              : `${context.dataset.label}: ${numberFormat.format(Math.round(context.parsed.y))} คน`),
+          },
+        },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#9aa5a7', font: { family: 'DM Mono', size: 9 }, maxRotation: 0, autoSkipPadding: 14 } },
+        y: { grid: { color: '#edf1ef' }, ticks: { color: '#9aa5a7', font: { family: 'DM Mono', size: 9 }, callback: (value) => compactFormat.format(value) } },
+      },
+    },
+  });
+
+  const accuracy = data.accuracy;
+  document.querySelector('#forecast-model').textContent = `วิธี: ${data.model.label}`;
+  document.querySelector('#forecast-accuracy').innerHTML = `
+    <div class="accuracy-item ${accuracy.beats_baseline ? 'win' : 'lose'}">
+      <span>คลาดเคลื่อนในปีทดสอบ</span><b>${accuracy.test_mape_percent}%</b>
+    </div>
+    <div class="accuracy-item"><span>วิธีพื้นฐาน (เดือนเดียวกันปีก่อน)</span><b>${accuracy.seasonal_naive_mape_percent}%</b></div>
+    <div class="accuracy-item"><span>ทายล่วงหน้า 1 เดือน</span><b>${accuracy.one_step_mape_percent}%</b></div>
+    <div class="accuracy-item"><span>ข้อมูลที่ใช้</span><b>${data.data.months_available} เดือน</b></div>`;
+
+  document.querySelector('#forecast-table').innerHTML = data.forecast.map((row) => `
+    <div class="forecast-row">
+      <span class="month">${monthLabel(row.month)}</span>
+      <b>${numberFormat.format(row.visitors)} คน</b>
+      <span class="range">${row.lower === null ? '' : `${compactFormat.format(row.lower)}–${compactFormat.format(row.upper)}`}</span>
+    </div>`).join('');
+
+  document.querySelector('#forecast-caveats').textContent = data.caveats.map((text) => `• ${text}`).join('  ');
+}
+
+function renderImpact(data) {
+  const tiles = [];
+  if (data.rain) {
+    tiles.push(`
+      <div class="impact-tile ${data.rain.significant ? '' : 'is-weak'}">
+        <span>ฝนมากกว่าปกติ 100 มม.</span>
+        <b>${data.rain.effect_percent > 0 ? '+' : ''}${data.rain.effect_percent}%</b>
+        <em>${data.rain.significant ? 'ความสัมพันธ์ชัดเจน' : 'ยังสรุปไม่ได้'} · r = ${data.rain.correlation} · ${data.rain.months_used} เดือน</em>
+      </div>`);
+  }
+  if (data.holidays) {
+    tiles.push(`
+      <div class="impact-tile ${data.holidays.significant ? '' : 'is-weak'}">
+        <span>วันหยุดเพิ่ม 1 วัน</span>
+        <b>${data.holidays.effect_percent > 0 ? '+' : ''}${data.holidays.effect_percent}%</b>
+        <em>${data.holidays.significant ? 'ความสัมพันธ์ชัดเจน' : 'ยังสรุปไม่ได้'} · r = ${data.holidays.correlation} · ${data.holidays.months_used} เดือน</em>
+      </div>`);
+  }
+  document.querySelector('#impact-tiles').innerHTML = tiles.join('') || '<div class="loading">ยังวิเคราะห์ไม่ได้</div>';
+
+  if (!data.rain) return;
+  const points = data.rain.monthly.map((row) => ({ x: row.rain_anomaly_mm, y: row.visitor_index, month: row.month }));
+  // เส้นแนวโน้มคำนวณด้วยกำลังสองน้อยสุดจากจุดเดียวกับที่วาด
+  const meanX = points.reduce((sum, p) => sum + p.x, 0) / points.length;
+  const meanY = points.reduce((sum, p) => sum + p.y, 0) / points.length;
+  const denominator = points.reduce((sum, p) => sum + (p.x - meanX) ** 2, 0);
+  const slope = denominator ? points.reduce((sum, p) => sum + (p.x - meanX) * (p.y - meanY), 0) / denominator : 0;
+  const xs = [Math.min(...points.map((p) => p.x)), Math.max(...points.map((p) => p.x))];
+  const trend = xs.map((x) => ({ x, y: meanY + slope * (x - meanX) }));
+
+  charts.impact?.destroy();
+  charts.impact = new Chart(document.querySelector('#impact-chart'), {
+    data: {
+      datasets: [
+        { type: 'scatter', label: 'เดือน', data: points, backgroundColor: '#1f7fa3', pointRadius: 4,
+          borderColor: '#ffffff', borderWidth: 2 },
+        { type: 'line', label: 'เส้นแนวโน้ม', data: trend, borderColor: ACTUAL_COLOR, borderWidth: 2,
+          pointRadius: 0, fill: false },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { font: { family: 'IBM Plex Sans Thai', size: 10 }, boxWidth: 10 } },
+        tooltip: {
+          callbacks: {
+            label: (context) => {
+              const point = context.raw;
+              return point.month
+                ? `${monthLabel(point.month)}: ฝนต่างจากปกติ ${Math.round(point.x)} มม. · ดัชนีคน ${point.y.toFixed(2)}`
+                : `แนวโน้ม: ${point.y.toFixed(2)}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { title: { display: true, text: 'ฝนมากกว่า/น้อยกว่าปกติของเดือนนั้น (มม.)', color: '#8a9699', font: { family: 'IBM Plex Sans Thai', size: 9 } },
+             grid: { color: '#edf1ef' }, ticks: { color: '#9aa5a7', font: { family: 'DM Mono', size: 9 } } },
+        y: { title: { display: true, text: 'ดัชนีคน (1.0 = ตามที่คาด)', color: '#8a9699', font: { family: 'IBM Plex Sans Thai', size: 9 } },
+             grid: { color: '#edf1ef' }, ticks: { color: '#9aa5a7', font: { family: 'DM Mono', size: 9 } } },
+      },
+    },
+  });
+
+  document.querySelector('#impact-caveats').textContent = data.caveats.map((text) => `• ${text}`).join('  ');
+}
+
 // ---------------------------------------------------------------- โหลดทั้งหมด
 
 async function loadDashboard() {
-  const [summary, zones, trends, traffic, recommendations, points, categories, demographics, upcoming, sources] =
+  const [summary, zones, trends, traffic, recommendations, points, categories, demographics, upcoming, sources, forecast, impact] =
     await Promise.all([
       api('/api/summary'),
       api('/api/zones'),
@@ -292,6 +438,8 @@ async function loadDashboard() {
       api('/api/demographics'),
       api('/api/holidays/upcoming?limit=4'),
       api('/api/sources'),
+      api('/api/forecast/tourism?months=6'),
+      api('/api/impact'),
     ]);
 
   renderSummary(summary);
@@ -304,6 +452,8 @@ async function loadDashboard() {
   renderDemographics(demographics);
   renderHolidays(upcoming);
   renderSources(sources);
+  renderTourismForecast(forecast);
+  renderImpact(impact);
 
   // สภาพอากาศเรียก API ภายนอก แยกออกมาเพื่อไม่ให้ทั้งแดชบอร์ดพังถ้าเน็ตมีปัญหา
   api('/api/weather/live').then(renderLiveWeather).catch(() => {
@@ -333,6 +483,7 @@ document.querySelectorAll('.nav-item').forEach((item) => {
 document.querySelector('#export-btn').addEventListener('click', async () => {
   const summary = await api('/api/summary');
   const sources = await api('/api/sources');
+  const forecast = await api('/api/forecast/tourism?months=6');
   const report = [
     'PATTAYA SMART TOURISM — รายงานสรุปผู้บริหาร',
     `สร้างเมื่อ: ${new Date().toLocaleString('th-TH')}`,
@@ -343,6 +494,13 @@ document.querySelector('#export-btn').addEventListener('click', async () => {
     `ประชากรแฝง ปี ${summary.population.calendar_year}: ${numberFormat.format(summary.population.population)} คน`,
     `แยกที่มีพิกัด: ${summary.geocode_coverage.geocoded}/${summary.geocode_coverage.total}`,
     '',
+    ...(forecast.forecast ? [
+      `พยากรณ์เดือน ${forecast.forecast[0].month}: ${numberFormat.format(forecast.forecast[0].visitors)} คน `
+        + `(ช่วงประมาณ ${numberFormat.format(forecast.forecast[0].lower)}-${numberFormat.format(forecast.forecast[0].upper)})`,
+      `วิธีพยากรณ์: ${forecast.model.label} คลาดเคลื่อนในปีทดสอบ ${forecast.accuracy.test_mape_percent}% `
+        + `เทียบวิธีพื้นฐาน ${forecast.accuracy.seasonal_naive_mape_percent}%`,
+      '',
+    ] : []),
     'แหล่งข้อมูล:',
     ...sources.map((source) => `- ${source.name} (${source.records || 0} รายการ, นำเข้า ${source.last_imported_at || '-'})`),
   ].join('\n');
