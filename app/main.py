@@ -4,6 +4,7 @@ import json
 import time
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
+from math import asin, cos, pi, radians, sin, sqrt
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlencode
@@ -29,6 +30,14 @@ THAI_MONTH_NAMES = (
 
 # วันนี้ตามเวลาไทย ฐานข้อมูล Supabase ใช้เวลา UTC ถ้าใช้ CURRENT_DATE ตรง ๆ ช่วงตี 0-7 จะได้วันของเมื่อวาน
 TODAY_BANGKOK = "(now() AT TIME ZONE 'Asia/Bangkok')::date"
+
+# ตาราง public_holidays เก็บทั้งวันหยุดราชการ (public/observed) และวันสำคัญที่ไม่ใช่วันหยุด
+# (observance เช่น ตรุษจีน คริสต์มาส วาเลนไทน์) เวลานับ "จำนวนวันหยุดต่อเดือน" เพื่อวิเคราะห์
+# ต้องนับเฉพาะวันที่ราชการหยุดจริง ไม่งั้นผลของวันหยุดจะถูกเจือจางด้วยวันที่คนยังทำงานปกติ
+# COALESCE ไว้เผื่อแถวเก่าที่นำเข้าก่อนมีการแยกประเภท
+PUBLIC_HOLIDAY_ONLY = "COALESCE(holiday_type, 'public') <> 'observance'"
+
+HOLIDAY_SOURCE = "Thai Public Holidays Calendar (iCalendar)"
 
 
 @asynccontextmanager
@@ -215,7 +224,7 @@ def summary() -> dict:
     )
     next_holiday = query_one(
         f"""SELECT date, name, local_name FROM public_holidays
-            WHERE date >= {TODAY_BANGKOK} ORDER BY date LIMIT 1"""
+            WHERE date >= {TODAY_BANGKOK} AND {PUBLIC_HOLIDAY_ONLY} ORDER BY date LIMIT 1"""
     )
     coverage = query_one(
         """SELECT COUNT(DISTINCT intersection_name) AS total,
@@ -312,6 +321,142 @@ def zones(year: int | None = Query(default=None)) -> list[dict]:
     return intersections
 
 
+# ---------------------------------------------------------------- โซนย่อย (Micro-Zoning)
+
+# ย่านท่องเที่ยวหลักของเมืองพัทยา เก็บเป็นจุดศูนย์กลางกับรัศมีเพื่อแบ่งพื้นที่ระดับย่อย
+# พิกัดอ่านจาก OpenStreetMap เป็นค่าประมาณระดับย่าน ไม่ใช่ขอบเขตการปกครองตามกฎหมาย
+# จุดที่อยู่ในรัศมีของหลายย่านจะถูกนับให้ย่านที่ศูนย์กลางใกล้ที่สุดเพียงย่านเดียว จึงไม่มีการนับซ้ำ
+MICRO_ZONES: tuple[dict, ...] = (
+    {"code": "naklua", "name": "นาเกลือ", "latitude": 12.9720, "longitude": 100.8940, "radius_km": 1.6},
+    {"code": "north", "name": "พัทยาเหนือ", "latitude": 12.9560, "longitude": 100.8860, "radius_km": 1.4},
+    {"code": "central", "name": "พัทยากลาง", "latitude": 12.9330, "longitude": 100.8810, "radius_km": 1.4},
+    {"code": "walking", "name": "พัทยาใต้ / วอล์กกิ้งสตรีท", "latitude": 12.9245, "longitude": 100.8705, "radius_km": 1.2},
+    {"code": "pratumnak", "name": "เขาพระตำหนัก", "latitude": 12.9110, "longitude": 100.8660, "radius_km": 1.3},
+    {"code": "jomtien", "name": "หาดจอมเทียน", "latitude": 12.8930, "longitude": 100.8720, "radius_km": 2.2},
+    {"code": "east", "name": "พัทยาตะวันออก (สุขุมวิท)", "latitude": 12.9330, "longitude": 100.9150, "radius_km": 3.0},
+    {"code": "kolarn", "name": "เกาะล้าน", "latitude": 12.9180, "longitude": 100.7830, "radius_km": 2.5},
+)
+
+EARTH_RADIUS_KM = 6371.0
+
+
+def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """ระยะทางบนผิวโลกเป็นกิโลเมตร ใช้สูตร haversine"""
+    phi1, phi2 = radians(lat1), radians(lat2)
+    d_phi, d_lambda = radians(lat2 - lat1), radians(lon2 - lon1)
+    a = sin(d_phi / 2) ** 2 + cos(phi1) * cos(phi2) * sin(d_lambda / 2) ** 2
+    return 2 * EARTH_RADIUS_KM * asin(sqrt(a))
+
+
+def assign_zone(latitude: float | None, longitude: float | None) -> Optional[dict]:
+    """หาย่านที่ศูนย์กลางใกล้จุดนี้ที่สุดและยังอยู่ในรัศมี คืน None ถ้าอยู่นอกทุกย่าน"""
+    if latitude is None or longitude is None:
+        return None
+    best: Optional[tuple[float, dict]] = None
+    for zone in MICRO_ZONES:
+        distance = haversine_km(latitude, longitude, zone["latitude"], zone["longitude"])
+        if distance <= zone["radius_km"] and (best is None or distance < best[0]):
+            best = (distance, zone)
+    return best[1] if best else None
+
+
+@app.get("/api/zones/micro")
+def micro_zones(year: int | None = Query(default=None)) -> dict:
+    """สรุปความหนาแน่นรายย่านของเมืองพัทยา ใช้ทำการวิเคราะห์การกระจายตัวระดับพื้นที่ย่อย
+
+    รวมสถานที่ท่องเที่ยว/ธุรกิจจาก OpenStreetMap กับปริมาณรถรายแยกของเมืองพัทยา
+    เข้าเป็นย่านเดียวกัน เพื่อเทียบได้ว่าคนกระจุกตัวอยู่ย่านไหนมากกว่ากัน
+    """
+    buckets: dict[str, dict] = {
+        zone["code"]: {
+            **zone,
+            "area_km2": round(pi * zone["radius_km"] ** 2, 2),
+            "poi_total": 0,
+            "poi_by_category": {},
+            "intersections": [],
+            "vehicle_volume": 0,
+            "vehicle_months": 0,
+        }
+        for zone in MICRO_ZONES
+    }
+    outside = {"poi_total": 0, "intersections": 0, "vehicle_volume": 0}
+
+    for point in query("SELECT category, latitude, longitude FROM poi_businesses"):
+        zone = assign_zone(point["latitude"], point["longitude"])
+        if zone is None:
+            outside["poi_total"] += 1
+            continue
+        bucket = buckets[zone["code"]]
+        bucket["poi_total"] += 1
+        categories = bucket["poi_by_category"]
+        categories[point["category"]] = categories.get(point["category"], 0) + 1
+
+    clause = "WHERE calendar_year = %s" if year else ""
+    parameters: list[Any] = [year] if year else []
+    intersections = query(
+        f"""SELECT intersection_name, latitude, longitude,
+                   SUM(vehicle_volume) AS vehicle_volume,
+                   COUNT(DISTINCT calendar_year || '-' || month_id) AS months
+            FROM zone_traffic_volume {clause}
+            GROUP BY intersection_name, latitude, longitude
+            ORDER BY vehicle_volume DESC""",
+        parameters,
+    )
+    for intersection in intersections:
+        zone = assign_zone(intersection["latitude"], intersection["longitude"])
+        if zone is None:
+            # แยกที่ยังไม่มีพิกัด หรืออยู่นอกย่านที่กำหนด ไม่ถูกนับให้ย่านใด
+            outside["intersections"] += 1
+            outside["vehicle_volume"] += int(intersection["vehicle_volume"])
+            continue
+        bucket = buckets[zone["code"]]
+        bucket["intersections"].append(intersection["intersection_name"])
+        bucket["vehicle_volume"] += int(intersection["vehicle_volume"])
+        bucket["vehicle_months"] = max(bucket["vehicle_months"], intersection["months"])
+
+    poi_grand_total = sum(bucket["poi_total"] for bucket in buckets.values()) + outside["poi_total"]
+    results = []
+    for bucket in buckets.values():
+        categories = sorted(bucket["poi_by_category"].items(), key=lambda item: item[1], reverse=True)
+        results.append({
+            "code": bucket["code"],
+            "name": bucket["name"],
+            "latitude": bucket["latitude"],
+            "longitude": bucket["longitude"],
+            "radius_km": bucket["radius_km"],
+            "area_km2": bucket["area_km2"],
+            "poi_total": bucket["poi_total"],
+            "poi_density_per_km2": round(bucket["poi_total"] / bucket["area_km2"], 1),
+            "poi_share_percent": round(bucket["poi_total"] / poi_grand_total * 100, 1) if poi_grand_total else 0.0,
+            "top_categories": dict(categories[:5]),
+            "dominant_category": categories[0][0] if categories else None,
+            "intersection_count": len(bucket["intersections"]),
+            "intersection_names": bucket["intersections"],
+            "vehicle_volume": bucket["vehicle_volume"],
+            "vehicle_volume_per_month": round(bucket["vehicle_volume"] / bucket["vehicle_months"])
+            if bucket["vehicle_months"] else None,
+        })
+    results.sort(key=lambda zone: zone["poi_total"], reverse=True)
+
+    return {
+        "zones": results,
+        "outside": outside,
+        "method": (
+            "แบ่งเมืองพัทยาเป็นย่านตามจุดศูนย์กลางและรัศมีที่กำหนดไว้ล่วงหน้า "
+            "แล้วนับสถานที่จาก OpenStreetMap และปริมาณรถรายแยกเข้าย่านที่ศูนย์กลางใกล้ที่สุด"
+        ),
+        "caveats": [
+            "ขอบเขตย่านเป็นวงกลมโดยประมาณจากพิกัด OpenStreetMap ไม่ใช่ขอบเขตการปกครองตามกฎหมาย",
+            "ความหนาแน่นคิดจากพื้นที่วงกลมเต็มวง ย่านที่มีพื้นที่ทะเลอยู่ในวงจะได้ค่าต่ำกว่าความเป็นจริง",
+            f"แยกที่ไม่มีพิกัดหรืออยู่นอกย่านที่กำหนด {outside['intersections']} แยก ไม่ถูกนับให้ย่านใด",
+        ],
+        "sources": [
+            "OpenStreetMap (Overpass API)",
+            "Open Data เมืองพัทยา ชุดข้อมูลปริมาณรถ (112)",
+        ],
+    }
+
+
 # ---------------------------------------------------------------- แนวโน้ม
 
 
@@ -324,7 +469,10 @@ def trends() -> list[dict]:
            FROM tourism_monthly ORDER BY calendar_year, month_id"""
     )
     holidays_by_month: dict[str, int] = {}
-    for row in query("SELECT to_char(date, 'YYYY-MM') AS ym, COUNT(*) AS total FROM public_holidays GROUP BY ym"):
+    for row in query(
+        f"""SELECT to_char(date, 'YYYY-MM') AS ym, COUNT(*) AS total
+            FROM public_holidays WHERE {PUBLIC_HOLIDAY_ONLY} GROUP BY ym"""
+    ):
         holidays_by_month[row["ym"]] = row["total"]
     for row in rows:
         row["holidays"] = holidays_by_month.get(row["date"][:7], 0)
@@ -457,7 +605,7 @@ FORECAST_CAVEATS = [
 IMPACT_CAVEATS = [
     "เป็นความสัมพันธ์ ไม่ใช่การพิสูจน์เหตุและผล",
     "ข้อมูลนักท่องเที่ยวเป็นรายเดือน จึงดูผลของฝนรายวันหรือวันหยุดแต่ละวันไม่ได้",
-    "วันหยุดในฐานข้อมูลมีตั้งแต่ปี 2024 การวิเคราะห์วันหยุดจึงใช้เดือนน้อยกว่าการวิเคราะห์ฝน",
+    "นับเฉพาะวันหยุดราชการ วันสำคัญที่ราชการไม่ได้หยุด (ตรุษจีน คริสต์มาส) ไม่ถูกนับเป็นวันหยุด",
     "ฝนเป็นข้อมูลวิเคราะห์ย้อนหลัง (ERA5) ของจุดเดียวกลางเมืองพัทยา ไม่ใช่ค่าเฉลี่ยทั้งเมือง",
 ]
 
@@ -511,7 +659,8 @@ def impact_analysis() -> dict:
            FROM weather_daily GROUP BY 1"""
     )}
     holidays_by_month = {row["month"]: row["days"] for row in query(
-        "SELECT to_char(date, 'YYYY-MM') AS month, COUNT(*) AS days FROM public_holidays GROUP BY 1"
+        f"""SELECT to_char(date, 'YYYY-MM') AS month, COUNT(*) AS days
+            FROM public_holidays WHERE {PUBLIC_HOLIDAY_ONLY} GROUP BY 1"""
     )}
 
     rain_months = [(month, index) for month, index in zip(labels, visitor_index) if month in rain_by_month]
@@ -541,7 +690,7 @@ def impact_analysis() -> dict:
         "rain": rain,
         "holidays": holidays,
         "caveats": IMPACT_CAVEATS,
-        "sources": [FORECAST_SOURCE, "Open-Meteo Archive (ERA5)", "World Holidays API (TH)"],
+        "sources": [FORECAST_SOURCE, "Open-Meteo Archive (ERA5)", HOLIDAY_SOURCE],
     }
 
 
@@ -708,7 +857,7 @@ def recommendations() -> list[dict]:
                 + ("ควรเตรียมพื้นที่ในร่มและกิจกรรมสำรอง" if rain >= 60 else "อากาศเอื้อต่อกิจกรรมกลางแจ้ง")
             ),
             "signal": "วันหยุดใกล้ถึง",
-            "source": "World Holidays API + Open-Meteo",
+            "source": f"{HOLIDAY_SOURCE} + Open-Meteo",
         })
     if weather and weather["rainy_days"]:
         days = weather["rainy_days"]
