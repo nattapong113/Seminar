@@ -54,3 +54,46 @@ a.nav-item{text-decoration:none}
 .impact-tile em{display:block;font-style:normal;font-size:10px;color:#718087;line-height:1.5}
 .recommendation-item .assumption{display:block;font-size:10px;color:#8a9699;margin-top:5px;padding-left:9px;border-left:2px solid #e4eae7}
 @media(max-width:700px){.impact-tiles{grid-template-columns:1fr}}
+
+/* ---------------------------------------------------------------- โซนย่อย (Micro-Zoning) */
+.zone-table{display:grid;gap:1px}
+.zone-row{display:grid;grid-template-columns:18px 1fr 74px 62px;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid #f1f4f2}
+.zone-row:last-child{border-bottom:0}
+.zone-swatch{width:10px;height:10px;border-radius:2px}
+.zone-name{font-size:12px;font-weight:600;line-height:1.3}
+.zone-sub{font:9px 'DM Mono';color:#9ba7a9;margin-top:3px;display:block}
+.zone-bar{height:4px;background:#eef2f0;margin-top:6px}
+.zone-bar i{display:block;height:100%}
+.zone-metric{text-align:right;font:500 12px 'DM Mono'}
+.zone-metric span{display:block;color:#9ba7a9;font:9px 'IBM Plex Sans Thai';margin-top:2px}
+@media(max-width:700px){.zone-row{grid-template-columns:14px 1fr 60px}.zone-row>.zone-metric:last-child{display:none}}
+
+/* ---------------------------------------------------------------- รายงานผู้บริหารสำหรับพิมพ์ */
+#print-report{display:none}
+@media print{
+  @page{size:A4;margin:14mm}
+  .app-shell{display:none!important}
+  #print-report{display:block;font-family:'IBM Plex Sans Thai',sans-serif;color:#182b32;font-size:11px}
+  .pr-head{border-bottom:3px solid var(--coral);padding-bottom:10px;margin-bottom:16px}
+  .pr-head h1{font-size:19px;margin:0 0 4px}
+  .pr-head .pr-meta{font:10px 'DM Mono';color:#718087}
+  .pr-section{margin-bottom:15px;break-inside:avoid}
+  .pr-section h2{font-size:13px;margin:0 0 7px;padding-bottom:4px;border-bottom:1px solid #d8e0dd}
+  .pr-kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+  .pr-kpi div{border-left:2px solid var(--coral);padding-left:7px}
+  .pr-kpi b{display:block;font:500 15px 'DM Mono';margin-bottom:2px}
+  .pr-kpi span{font-size:9px;color:#718087;line-height:1.4}
+  #print-report table{width:100%;border-collapse:collapse;font-size:10px}
+  #print-report th{text-align:left;background:#f2f5f3;padding:5px 6px;font-weight:600;border-bottom:1px solid #d8e0dd}
+  #print-report td{padding:4px 6px;border-bottom:1px solid #eef1ef}
+  #print-report td.num,#print-report th.num{text-align:right;font-family:'DM Mono'}
+  .pr-rec{border-left:2px solid var(--coral);padding:2px 0 2px 8px;margin-bottom:7px;break-inside:avoid}
+  .pr-rec b{display:block;font-size:11px}
+  .pr-rec p{margin:2px 0 0;font-size:10px;color:#4a5a60;line-height:1.5}
+  .pr-rec cite{font:8px 'DM Mono';color:#9ba7a9;font-style:normal}
+  /* toBase64Image() คืนรูปตามขนาด canvas จริง ซึ่งกราฟในพาเนลแคบจะเป็นแนวตั้ง
+     ถ้าปล่อย width:100% รูปเดียวจะกินพื้นที่ทั้งหน้า จึงคุมด้วยความสูงแทน */
+  .pr-chart{display:block;width:auto;max-width:100%;max-height:58mm;margin:6px auto 0}
+  .pr-foot{border-top:1px solid #d8e0dd;padding-top:8px;font-size:9px;color:#718087;line-height:1.6}
+}
+.holiday-tag{font:8px 'DM Mono';color:#8a9699;background:#f1f4f2;padding:2px 4px;font-style:normal;margin-left:4px;vertical-align:1px}

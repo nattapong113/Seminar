@@ -18,6 +18,7 @@
       <nav>
         <a class="nav-item active" href="#section-overview"><span class="nav-icon">◉</span>ภาพรวมเมือง</a>
         <a class="nav-item" href="#section-spatial"><span class="nav-icon">⌁</span>พฤติกรรมเชิงพื้นที่</a>
+        <a class="nav-item" href="#section-zones"><span class="nav-icon">▦</span>การกระจายตัวรายย่าน</a>
         <a class="nav-item" href="#section-trends"><span class="nav-icon">↗</span>แนวโน้มและพยากรณ์</a>
         <a class="nav-item" href="#section-forecast"><span class="nav-icon">⌥</span>พยากรณ์และผลกระทบ</a>
         <a class="nav-item" href="#section-context"><span class="nav-icon">▤</span>บริบทเมืองและประชากร</a>
@@ -29,7 +30,7 @@
     <main class="main-content">
       <header class="topbar">
         <div><p class="eyebrow">CITY INTELLIGENCE / PATTAYA</p><h1>ห้องควบคุมการท่องเที่ยว</h1></div>
-        <button class="report-btn" id="export-btn"><span>↓</span> ส่งออกรายงาน</button>
+        <button class="report-btn" id="export-btn"><span>↧</span> ออกรายงานผู้บริหาร (PDF)</button>
       </header>
 
       <section class="toolbar">
@@ -67,6 +68,7 @@
           <div class="panel-heading">
             <div><p class="eyebrow">SPATIAL BEHAVIOR</p><h2>ความหนาแน่นเชิงพื้นที่</h2></div>
             <div class="layer-toggle">
+              <label><input type="checkbox" id="layer-zone" checked> ย่านท่องเที่ยว</label>
               <label><input type="checkbox" id="layer-poi" checked> ธุรกิจท่องเที่ยว</label>
               <label><input type="checkbox" id="layer-traffic" checked> ปริมาณรถรายแยก</label>
             </div>
@@ -74,12 +76,27 @@
           <div id="map"></div>
           <div class="map-caption">
             <span><b id="map-poi-count">—</b> สถานที่ (OpenStreetMap) · <b id="map-zone-count">—</b> แยกที่มีพิกัด</span>
-            <span>ความร้อน = ความหนาแน่นธุรกิจ · ขนาดวงกลม = ปริมาณรถ</span>
+            <span>ความร้อน = ความหนาแน่นธุรกิจ · ขนาดวงกลม = ปริมาณรถ · วงประ = ขอบเขตย่าน</span>
           </div>
         </article>
         <article class="panel ranking-panel">
           <div class="panel-heading"><div><p class="eyebrow">TRAFFIC BY INTERSECTION</p><h2>แยกที่มีปริมาณรถสูงสุด</h2></div></div>
           <div id="ranking-list" class="ranking-list"><div class="loading">กำลังอ่านข้อมูล...</div></div>
+        </article>
+      </section>
+
+      <section class="content-grid lower-grid" id="section-zones">
+        <article class="panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">MICRO-ZONING</p><h2>การกระจายตัวรายย่าน</h2></div>
+            <span class="chart-note" id="zone-note">—</span>
+          </div>
+          <div id="zone-table" class="zone-table"><div class="loading">กำลังแบ่งย่าน...</div></div>
+          <p class="caveat" id="zone-caveats"></p>
+        </article>
+        <article class="panel chart-panel">
+          <div class="panel-heading"><div><p class="eyebrow">ZONE DENSITY</p><h2>ความหนาแน่นธุรกิจต่อตร.กม.</h2></div></div>
+          <div class="chart-wrap short"><canvas id="zone-chart"></canvas></div>
         </article>
       </section>
 
@@ -148,6 +165,11 @@
       <footer>ต้นแบบระบบศูนย์ข้อมูลการท่องเที่ยวพัทยา <span>•</span> ทุกตัวเลขบนหน้านี้มาจากข้อมูลจริงที่นำเข้าแล้ว ไม่มีข้อมูลจำลอง</footer>
     </main>
   </div>
+
+  <!-- รายงานผู้บริหาร ซ่อนไว้บนหน้าจอ แสดงเฉพาะตอนสั่งพิมพ์ (ดู @media print ใน styles.css)
+       ทำแบบนี้แทนการเปิดหน้าต่างใหม่ เพราะตัวบล็อกป๊อปอัปของเบราว์เซอร์มักบล็อกหน้าต่างที่เปิดเอง -->
+  <div id="print-report" aria-hidden="true"></div>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>

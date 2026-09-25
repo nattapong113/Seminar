@@ -112,10 +112,104 @@ function renderMap(zones, points) {
 }
 
 function applyLayerVisibility() {
+  const showZone = document.querySelector('#layer-zone').checked;
   const showPoi = document.querySelector('#layer-poi').checked;
   const showTraffic = document.querySelector('#layer-traffic').checked;
+  if (window.zoneLayer) showZone ? window.zoneLayer.addTo(window.map) : window.map.removeLayer(window.zoneLayer);
   if (window.poiHeat) showPoi ? window.poiHeat.addTo(window.map) : window.map.removeLayer(window.poiHeat);
   if (window.trafficLayer) showTraffic ? window.trafficLayer.addTo(window.map) : window.map.removeLayer(window.trafficLayer);
+}
+
+// ---------------------------------------------------------------- โซนย่อย (Micro-Zoning)
+
+// ไล่สีตามความหนาแน่นธุรกิจต่อ ตร.กม. เทียบกับย่านที่หนาแน่นที่สุด
+function zoneColor(density, maxDensity) {
+  const ratio = maxDensity ? density / maxDensity : 0;
+  if (ratio > 0.66) return '#c33f2c';
+  if (ratio > 0.33) return '#e5b84d';
+  if (ratio > 0.08) return '#5da17d';
+  return '#4b90a9';
+}
+
+function renderZoneLayer(zones) {
+  const maxDensity = Math.max(...zones.map((zone) => zone.poi_density_per_km2), 1);
+  if (window.zoneLayer) window.map.removeLayer(window.zoneLayer);
+  window.zoneLayer = L.layerGroup(zones.map((zone) => {
+    const color = zoneColor(zone.poi_density_per_km2, maxDensity);
+    const categories = Object.entries(zone.top_categories)
+      .map(([name, count]) => `${name} ${count}`).join(' · ');
+    return L.circle([zone.latitude, zone.longitude], {
+      // รัศมีของ L.circle เป็นเมตร ส่วน API ส่งมาเป็นกิโลเมตร
+      radius: zone.radius_km * 1000,
+      color, weight: 2, dashArray: '5 5', fillColor: color, fillOpacity: 0.07,
+    }).bindPopup(
+      `<strong>${zone.name}</strong><br>` +
+      `ธุรกิจท่องเที่ยว ${numberFormat.format(zone.poi_total)} แห่ง ` +
+      `(${zone.poi_share_percent}% ของทั้งเมือง)<br>` +
+      `ความหนาแน่น ${zone.poi_density_per_km2} แห่ง/ตร.กม.<br>` +
+      `ปริมาณรถสะสม ${numberFormat.format(zone.vehicle_volume)} คัน จาก ${zone.intersection_count} แยก<br>` +
+      (categories ? `<small>${categories}</small>` : '')
+    );
+  }));
+}
+
+function renderZoneTable(zones) {
+  const maxDensity = Math.max(...zones.map((zone) => zone.poi_density_per_km2), 1);
+  document.querySelector('#zone-table').innerHTML = zones.map((zone) => {
+    const color = zoneColor(zone.poi_density_per_km2, maxDensity);
+    return `
+    <div class="zone-row">
+      <span class="zone-swatch" style="background:${color}"></span>
+      <div>
+        <div class="zone-name">${zone.name}</div>
+        <span class="zone-sub">${zone.intersection_count} แยก · ${zone.dominant_category || 'ไม่มีข้อมูลธุรกิจ'}</span>
+        <div class="zone-bar"><i style="width:${Math.max(2, zone.poi_density_per_km2 / maxDensity * 100)}%;background:${color}"></i></div>
+      </div>
+      <div class="zone-metric">${numberFormat.format(zone.poi_total)}<span>แห่ง (${zone.poi_share_percent}%)</span></div>
+      <div class="zone-metric">${zone.poi_density_per_km2}<span>ต่อ ตร.กม.</span></div>
+    </div>`;
+  }).join('');
+}
+
+function renderZoneChart(zones) {
+  const maxDensity = Math.max(...zones.map((zone) => zone.poi_density_per_km2), 1);
+  charts.zone?.destroy();
+  charts.zone = new Chart(document.querySelector('#zone-chart'), {
+    type: 'bar',
+    data: {
+      labels: zones.map((zone) => zone.name),
+      datasets: [{
+        data: zones.map((zone) => zone.poi_density_per_km2),
+        backgroundColor: zones.map((zone) => zoneColor(zone.poi_density_per_km2, maxDensity)),
+        borderWidth: 0,
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (item) => `${item.parsed.x} แห่ง/ตร.กม.` } },
+      },
+      scales: {
+        x: { grid: { color: '#eef2f0' }, ticks: { font: { size: 9 } } },
+        y: { grid: { display: false }, ticks: { font: { size: 9 } } },
+      },
+    },
+  });
+}
+
+function renderMicroZones(data) {
+  state.microZones = data;
+  const zones = data.zones;
+  renderZoneLayer(zones);
+  renderZoneTable(zones);
+  renderZoneChart(zones);
+  const covered = zones.reduce((sum, zone) => sum + zone.poi_total, 0);
+  const total = covered + data.outside.poi_total;
+  setText('zone-note', `${zones.length} ย่าน · ครอบคลุมธุรกิจ ${(covered / total * 100).toFixed(1)}%`);
+  setText('zone-caveats', data.caveats.join(' · '));
+  applyLayerVisibility();
 }
 
 // ---------------------------------------------------------------- อันดับ / คำแนะนำ
@@ -261,7 +355,10 @@ function renderHolidays(holidays) {
   document.querySelector('#holiday-list').innerHTML = holidays.map((holiday) => `
     <div class="holiday-item">
       <span class="holiday-date">${holiday.date}</span>
-      <span class="holiday-name">${holiday.local_name || holiday.name}</span>
+      <span class="holiday-name">${holiday.local_name || holiday.name}${
+        // วันสำคัญที่ราชการไม่ได้หยุด ต้องแยกให้เห็น เพราะไม่ถูกนับเป็นวันหยุดในการวิเคราะห์
+        holiday.holiday_type === 'observance' ? ' <em class="holiday-tag">วันสำคัญ</em>' : ''
+      }</span>
       <span class="holiday-away">อีก ${holiday.days_away} วัน</span>
     </div>`).join('');
 }
@@ -426,10 +523,11 @@ function renderImpact(data) {
 // ---------------------------------------------------------------- โหลดทั้งหมด
 
 async function loadDashboard() {
-  const [summary, zones, trends, traffic, recommendations, points, categories, demographics, upcoming, sources, forecast, impact] =
+  const [summary, zones, micro, trends, traffic, recommendations, points, categories, demographics, upcoming, sources, forecast, impact] =
     await Promise.all([
       api('/api/summary'),
       api('/api/zones'),
+      api('/api/zones/micro'),
       api('/api/trends'),
       api('/api/traffic/trends'),
       api('/api/recommendations'),
@@ -445,6 +543,7 @@ async function loadDashboard() {
   renderSummary(summary);
   renderRanges(trends, traffic);
   renderMap(zones, points);
+  renderMicroZones(micro);
   renderRanking(zones);
   renderTrendChart(trends, traffic);
   renderRecommendations(recommendations);
@@ -470,8 +569,16 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap', maxZoom: 19,
 }).addTo(window.map);
 
+document.querySelector('#layer-zone').addEventListener('change', applyLayerVisibility);
 document.querySelector('#layer-poi').addEventListener('change', applyLayerVisibility);
 document.querySelector('#layer-traffic').addEventListener('change', applyLayerVisibility);
+
+// ตอนพิมพ์ แดชบอร์ดถูกซ่อน แผนที่จึงกว้าง 0 แล้ว leaflet.heat จะโยน error ตอนวาดใหม่
+// ถอดเลเยอร์ความร้อนออกชั่วคราวระหว่างพิมพ์ แล้วค่อยคืนตามสถานะ checkbox เดิม
+window.addEventListener('beforeprint', () => {
+  if (window.poiHeat && window.map.hasLayer(window.poiHeat)) window.map.removeLayer(window.poiHeat);
+});
+window.addEventListener('afterprint', applyLayerVisibility);
 
 document.querySelectorAll('.nav-item').forEach((item) => {
   item.addEventListener('click', () => {
@@ -480,35 +587,173 @@ document.querySelectorAll('.nav-item').forEach((item) => {
   });
 });
 
+// ---------------------------------------------------------------- รายงานผู้บริหาร
+
+// กันไม่ให้ข้อความจากฐานข้อมูล (ชื่อแยก ชื่อวันหยุด คำแนะนำ) ที่มีอักขระ HTML ทำให้รายงานเพี้ยน
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>"]/g, (character) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[character]
+));
+
+// กราฟบนแดชบอร์ดวาดด้วย canvas จึงแปลงเป็นรูปฝังลงรายงานได้ตรง ๆ
+function chartImage(chart, alt) {
+  if (!chart) return '';
+  return `<img class="pr-chart" alt="${alt}" src="${chart.toBase64Image()}">`;
+}
+
+function reportTable(headers, rows) {
+  const head = headers.map((header) => `<th${header.num ? ' class="num"' : ''}>${header.label}</th>`).join('');
+  const body = rows.map((row) => `<tr>${row.map((cell, index) => (
+    `<td${headers[index].num ? ' class="num"' : ''}>${cell}</td>`
+  )).join('')}</tr>`).join('');
+  return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+function buildReport({ summary, sources, forecast, impact, micro, recommendations }) {
+  const sections = [];
+
+  sections.push(`
+    <div class="pr-head">
+      <h1>รายงานสรุปผู้บริหาร — ระบบคลังข้อมูลการท่องเที่ยวเมืองพัทยา</h1>
+      <div class="pr-meta">สร้างเมื่อ ${new Date().toLocaleString('th-TH')} · ข้อมูลจริงจาก Open Data ทั้งหมด ไม่มีข้อมูลจำลอง</div>
+    </div>`);
+
+  sections.push(`
+    <div class="pr-section">
+      <h2>ตัวชี้วัดภาพรวม</h2>
+      <div class="pr-kpi">
+        <div><b>${numberFormat.format(summary.tourism.tourists_year_total)}</b><span>นักท่องเที่ยวลงเกาะล้าน ปี ${summary.tourism.year}${
+          summary.tourism.year_over_year_percent === null ? '' : ` (${summary.tourism.year_over_year_percent}% เทียบปีก่อน)`
+        }</span></div>
+        <div><b>${compactFormat.format(summary.traffic.vehicles)}</b><span>ปริมาณรถ ปี ${summary.traffic.calendar_year} จาก ${summary.traffic.intersections} แยก</span></div>
+        <div><b>${numberFormat.format(summary.poi.total)}</b><span>ธุรกิจท่องเที่ยว ${summary.poi.categories} ประเภท (OpenStreetMap)</span></div>
+        <div><b>${numberFormat.format(summary.population.population)}</b><span>ประชากรแฝง ปี ${summary.population.calendar_year}</span></div>
+      </div>
+    </div>`);
+
+  if (micro?.zones?.length) {
+    sections.push(`
+      <div class="pr-section">
+        <h2>การกระจายตัวรายย่าน (Micro-Zoning)</h2>
+        ${reportTable(
+          [{ label: 'ย่าน' }, { label: 'ธุรกิจ', num: true }, { label: 'ส่วนแบ่ง', num: true },
+           { label: 'ต่อ ตร.กม.', num: true }, { label: 'แยก', num: true }, { label: 'ปริมาณรถสะสม', num: true }, { label: 'ประเภทเด่น' }],
+          micro.zones.map((zone) => [
+            escapeHtml(zone.name),
+            numberFormat.format(zone.poi_total),
+            `${zone.poi_share_percent}%`,
+            zone.poi_density_per_km2,
+            zone.intersection_count,
+            numberFormat.format(zone.vehicle_volume),
+            escapeHtml(zone.dominant_category || '—'),
+          ])
+        )}
+      </div>`);
+  }
+
+  if (forecast?.forecast?.length) {
+    sections.push(`
+      <div class="pr-section">
+        <h2>พยากรณ์นักท่องเที่ยว</h2>
+        <p style="margin:0 0 6px">วิธีที่เลือกอัตโนมัติ: <b>${escapeHtml(forecast.model.label)}</b> —
+          คลาดเคลื่อนในปีทดสอบ ${forecast.accuracy.test_mape_percent}%
+          (วิธีพื้นฐาน "เดือนเดียวกันปีก่อน" ${forecast.accuracy.seasonal_naive_mape_percent}%)</p>
+        ${reportTable(
+          [{ label: 'เดือน' }, { label: 'พยากรณ์ (คน)', num: true }, { label: 'ช่วงประมาณ 95%', num: true }],
+          forecast.forecast.map((row) => [
+            monthLabel(row.month),
+            numberFormat.format(row.visitors),
+            `${numberFormat.format(row.lower)} – ${numberFormat.format(row.upper)}`,
+          ])
+        )}
+        ${chartImage(charts.forecast, 'กราฟพยากรณ์นักท่องเที่ยว')}
+      </div>`);
+  }
+
+  if (impact && !impact.error) {
+    const impactRow = (label, result) => [
+      label,
+      `${result.effect_percent > 0 ? '+' : ''}${result.effect_percent}%`,
+      `${result.correlation}${result.correlation_ci_95 ? ` [${result.correlation_ci_95.join(', ')}]` : ''}`,
+      `${result.months_used} เดือน`,
+      result.significant ? 'ความสัมพันธ์ชัดเจน' : 'ยังสรุปไม่ได้ (ช่วงความเชื่อมั่นคร่อมศูนย์)',
+    ];
+    const rows = [];
+    if (impact.rain) rows.push(impactRow('ฝนมากกว่าปกติของเดือนนั้น 100 มม.', impact.rain));
+    if (impact.holidays) rows.push(impactRow('วันหยุดราชการเพิ่มขึ้น 1 วัน', impact.holidays));
+    if (rows.length) {
+      sections.push(`
+        <div class="pr-section">
+          <h2>ผลของฝนและวันหยุด</h2>
+          <p style="margin:0 0 6px">${escapeHtml(impact.method)}</p>
+          ${reportTable([{ label: 'ปัจจัย' }, { label: 'ผลต่อนักท่องเที่ยว', num: true },
+            { label: 'r [ช่วงเชื่อมั่น 95%]', num: true }, { label: 'ข้อมูลที่ใช้', num: true },
+            { label: 'ข้อสรุป' }], rows)}
+        </div>`);
+    }
+  }
+
+  if (recommendations?.length) {
+    sections.push(`
+      <div class="pr-section">
+        <h2>ข้อเสนอแนะเชิงกลยุทธ์</h2>
+        ${recommendations.slice(0, 6).map((item) => `
+          <div class="pr-rec">
+            <b>${escapeHtml(item.title)}</b>
+            <p>${escapeHtml(item.detail)}</p>
+            <cite>${escapeHtml(item.signal)} · ${escapeHtml(item.source)}${
+              item.assumption ? ` · สมมติฐาน: ${escapeHtml(item.assumption)}` : ''
+            }</cite>
+          </div>`).join('')}
+      </div>`);
+  }
+
+  sections.push(`
+    <div class="pr-section">
+      <h2>แหล่งข้อมูลและเวลานำเข้าล่าสุด</h2>
+      ${reportTable(
+        [{ label: 'ชุดข้อมูล' }, { label: 'จำนวนระเบียน', num: true }, { label: 'นำเข้าล่าสุด' }],
+        sources.map((source) => [
+          escapeHtml(source.name),
+          source.records ? numberFormat.format(source.records) : '—',
+          escapeHtml(source.last_imported_at || 'ยังไม่นำเข้า'),
+        ])
+      )}
+    </div>`);
+
+  const caveats = [...(forecast?.caveats || []), ...(impact?.caveats || []), ...(micro?.caveats || [])];
+  sections.push(`
+    <div class="pr-foot">
+      <b>ข้อจำกัดที่ต้องอ่านประกอบ:</b><br>
+      ${caveats.map((caveat) => `• ${escapeHtml(caveat)}`).join('<br>')}
+    </div>`);
+
+  return sections.join('');
+}
+
 document.querySelector('#export-btn').addEventListener('click', async () => {
-  const summary = await api('/api/summary');
-  const sources = await api('/api/sources');
-  const forecast = await api('/api/forecast/tourism?months=6');
-  const report = [
-    'PATTAYA SMART TOURISM — รายงานสรุปผู้บริหาร',
-    `สร้างเมื่อ: ${new Date().toLocaleString('th-TH')}`,
-    '',
-    `นักท่องเที่ยวลงเกาะล้าน ปี ${summary.tourism.year}: ${numberFormat.format(summary.tourism.tourists_year_total)} คน (${summary.tourism.year_over_year_percent}% เทียบปีก่อน)`,
-    `ปริมาณรถ ปี ${summary.traffic.calendar_year}: ${numberFormat.format(summary.traffic.vehicles)} คัน จาก ${summary.traffic.intersections} แยก`,
-    `สถานที่ท่องเที่ยว/ธุรกิจ: ${numberFormat.format(summary.poi.total)} แห่ง ${summary.poi.categories} ประเภท`,
-    `ประชากรแฝง ปี ${summary.population.calendar_year}: ${numberFormat.format(summary.population.population)} คน`,
-    `แยกที่มีพิกัด: ${summary.geocode_coverage.geocoded}/${summary.geocode_coverage.total}`,
-    '',
-    ...(forecast.forecast ? [
-      `พยากรณ์เดือน ${forecast.forecast[0].month}: ${numberFormat.format(forecast.forecast[0].visitors)} คน `
-        + `(ช่วงประมาณ ${numberFormat.format(forecast.forecast[0].lower)}-${numberFormat.format(forecast.forecast[0].upper)})`,
-      `วิธีพยากรณ์: ${forecast.model.label} คลาดเคลื่อนในปีทดสอบ ${forecast.accuracy.test_mape_percent}% `
-        + `เทียบวิธีพื้นฐาน ${forecast.accuracy.seasonal_naive_mape_percent}%`,
-      '',
-    ] : []),
-    'แหล่งข้อมูล:',
-    ...sources.map((source) => `- ${source.name} (${source.records || 0} รายการ, นำเข้า ${source.last_imported_at || '-'})`),
-  ].join('\n');
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(new Blob([report], { type: 'text/plain;charset=utf-8' }));
-  link.download = 'pattaya-tourism-report.txt';
-  link.click();
-  URL.revokeObjectURL(link.href);
+  const button = document.querySelector('#export-btn');
+  const original = button.innerHTML;
+  button.disabled = true;
+  button.innerHTML = '<span>◷</span> กำลังสร้างรายงาน...';
+  try {
+    const [summary, sources, forecast, impact, recommendations] = await Promise.all([
+      api('/api/summary'),
+      api('/api/sources'),
+      api('/api/forecast/tourism?months=6'),
+      api('/api/impact'),
+      api('/api/recommendations'),
+    ]);
+    document.querySelector('#print-report').innerHTML = buildReport({
+      summary, sources, forecast, impact, recommendations, micro: state.microZones,
+    });
+    window.print();
+  } catch (error) {
+    console.error('สร้างรายงานไม่สำเร็จ:', error);
+    alert('สร้างรายงานไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+  } finally {
+    button.disabled = false;
+    button.innerHTML = original;
+  }
 });
 
 loadDashboard().catch((error) => {
