@@ -85,6 +85,20 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
 
+@app.middleware("http")
+async def revalidate_static(request: Request, call_next):
+    """บังคับให้เบราว์เซอร์ถามเซิร์ฟเวอร์ก่อนใช้ไฟล์หน้าเว็บจากแคชทุกครั้ง
+
+    ถ้าไม่ส่ง Cache-Control เบราว์เซอร์จะเดาอายุแคชเอง แล้วใช้ app.js เวอร์ชันเก่าต่อโดยไม่ถามเซิร์ฟเวอร์
+    ซึ่งเคยทำให้หน้าเว็บที่แคชไว้ก่อนมีระบบล็อกอิน ยิง API ตรง ๆ จนได้ 401 ทั้งหน้า
+    no-cache ไม่ได้แปลว่าห้ามแคช แต่แปลว่าต้องตรวจสอบก่อนใช้ ถ้าไฟล์ไม่เปลี่ยนจะได้ 304 ซึ่งเบามาก
+    """
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 def query(sql: str, parameters: list | tuple = ()) -> list[dict]:
     try:
         return _fetch_all(sql, parameters)
