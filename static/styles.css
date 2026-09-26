@@ -97,3 +97,67 @@ a.nav-item{text-decoration:none}
   .pr-foot{border-top:1px solid #d8e0dd;padding-top:8px;font-size:9px;color:#718087;line-height:1.6}
 }
 .holiday-tag{font:8px 'DM Mono';color:#8a9699;background:#f1f4f2;padding:2px 4px;font-style:normal;margin-left:4px;vertical-align:1px}
+
+/* ---------------------------------------------------------------- เข้าสู่ระบบ */
+[hidden]{display:none!important}
+#login-screen{position:fixed;inset:0;background:var(--navy);display:grid;place-items:center;padding:24px;z-index:1000}
+/* grid-template-columns เป็น minmax(0,1fr) เพราะ grid item มี min-width:auto โดยปริยาย
+   ทำให้คอลัมน์ขยายตามข้อความที่ยาวที่สุดใน <select> จนล้นออกนอกการ์ด */
+.login-card{background:white;padding:34px 32px 30px;width:100%;max-width:370px;box-shadow:0 18px 40px #0003;display:grid;grid-template-columns:minmax(0,1fr);gap:13px}
+.login-card>*{min-width:0}
+.login-card label{min-width:0;grid-template-columns:minmax(0,1fr)}
+.login-card input,.login-card select,.login-card button{max-width:100%;min-width:0}
+.login-card .brand-mark{margin-bottom:6px}
+.login-card h1{font-size:18px;margin:0;line-height:1.35}
+.login-sub{margin:0 0 6px;font-size:12px;color:var(--muted)}
+.login-card label{display:grid;gap:5px;font-size:11px;color:var(--muted)}
+.login-card input{border:1px solid var(--line);padding:10px 11px;font:400 13px 'IBM Plex Sans Thai';outline:0}
+.login-card input:focus{border-color:var(--coral)}
+.login-card button{background:var(--coral);border:0;color:white;padding:12px;font:600 13px 'IBM Plex Sans Thai';cursor:pointer;margin-top:6px}
+.login-card button:disabled{opacity:.6;cursor:default}
+.login-error{background:#fdf0ee;color:#b4402f;font-size:11px;padding:9px 11px;margin:0;line-height:1.5}
+
+/* ---------------------------------------------------------------- ผู้ใช้บนแถบบน */
+.topbar-right{display:flex;align-items:center;gap:12px}
+.user-chip{text-align:right;line-height:1.3}
+.user-chip strong{display:block;font-size:12px}
+.user-chip span{display:block;font:9px 'DM Mono';color:var(--muted)}
+#logout-btn{font-size:14px;line-height:1}
+
+/* ---------------------------------------------------------------- จัดการผู้ใช้ */
+.user-form{display:grid;gap:7px;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.user-form input,.user-form select{border:1px solid var(--line);padding:8px 10px;font:400 12px 'IBM Plex Sans Thai';outline:0}
+.user-form button{background:var(--coral);border:0;color:white;padding:9px;font:600 12px 'IBM Plex Sans Thai';cursor:pointer}
+.user-list,.role-list,.audit-list{display:grid;gap:1px}
+.user-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #f1f4f2}
+.user-row:last-child{border-bottom:0}
+.user-row strong{display:block;font-size:12px}
+.user-row span{display:block;font:9px 'DM Mono';color:#9ba7a9;margin-top:3px}
+.user-row button:disabled{opacity:.3;cursor:default}
+.role-row{padding:9px 0;border-bottom:1px solid #f1f4f2}
+.role-row:last-child{border-bottom:0}
+.role-head{display:flex;justify-content:space-between;font-size:12px}
+.role-head span{font:9px 'DM Mono';color:#9ba7a9}
+.role-perms{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.role-perms code{font:9px 'DM Mono';background:#f2f5f3;color:#5a6b70;padding:3px 5px}
+.audit-row{display:grid;grid-template-columns:auto 1fr;gap:9px;padding:6px 0;border-bottom:1px solid #f4f6f5;font-size:10px}
+.audit-row:last-child{border-bottom:0}
+.audit-time{font:9px 'DM Mono';color:#9ba7a9;white-space:nowrap}
+@media print{#login-screen{display:none!important}}
+
+/* ---------------------------------------------------------------- สมัครสมาชิก / อนุมัติ */
+.login-card .hint{color:#a4b0b2;font-weight:400}
+.login-card select{border:1px solid var(--line);padding:10px 11px;font:400 12px 'IBM Plex Sans Thai';outline:0;background:white}
+.login-success{background:#eef7f0;color:#3f7a56;font-size:11px;padding:9px 11px;margin:0;line-height:1.5}
+.login-switch{margin:2px 0 0;font-size:11px;color:var(--muted);text-align:center}
+.login-switch button{background:none;border:0;color:var(--coral);font:600 11px 'IBM Plex Sans Thai';cursor:pointer;padding:0;margin:0;width:auto}
+#login-screen{overflow-y:auto}
+.panel-heading-right{display:flex;align-items:center;gap:10px}
+.user-row.is-pending{background:#fffaf8;border-left:3px solid var(--coral);padding-left:9px;margin-left:-9px}
+.status-tag{font:9px 'DM Mono';color:var(--coral);background:#fdeeea;padding:2px 5px;font-style:normal;margin-left:5px;vertical-align:1px}
+.status-tag.is-rejected{color:#8a9699;background:#f1f4f2}
+.review-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.review-actions select{border:1px solid var(--line);padding:5px 6px;font:400 10px 'IBM Plex Sans Thai';outline:0;background:white}
+.approve-btn{background:var(--green);border:0;color:white;padding:7px 11px;font:600 11px 'IBM Plex Sans Thai';cursor:pointer}
+.approve-btn:disabled{opacity:.5;cursor:default}
+@media(max-width:700px){.user-row{flex-wrap:wrap}.review-actions{width:100%;justify-content:flex-end}}

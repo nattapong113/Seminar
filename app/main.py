@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
@@ -8,15 +9,16 @@ from math import asin, cos, pi, radians, sin, sqrt
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+# ตั้งชื่อใหม่เพราะ fastapi.Request ชื่อชนกัน ถ้าปล่อยไว้ตัวหลังจะทับตัวแรก
+from urllib.request import Request as HttpRequest, urlopen
 
 import psycopg
-from fastapi import FastAPI, Query
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import analytics
+from . import analytics, auth
 from .database import close_pool, get_pool, initialize_database
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -43,14 +45,38 @@ HOLIDAY_SOURCE = "Thai Public Holidays Calendar (iCalendar)"
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     initialize_database()
+    auth.bind(query, query_one)
+    auth.seed_roles(query, query_one)
+    generated_password = auth.seed_admin(query, query_one)
+    if generated_password:
+        # แสดงครั้งเดียวตอนสร้างผู้ดูแลคนแรก ไม่ได้เก็บไว้ที่ไหน ถ้าพลาดต้องลบผู้ใช้แล้วให้ระบบสร้างใหม่
+        # ต้อง flush เอง เพราะ stdout ถูก buffer เมื่อไม่ได้ต่อกับ terminal ข้อความจะค้างในบัฟเฟอร์
+        # จนกว่าเซิร์ฟเวอร์จะปิด ซึ่งสายเกินไปสำหรับรหัสผ่านที่ต้องจดทันที
+        banner = (
+            "=" * 72
+            + f"\n  สร้างผู้ดูแลระบบคนแรกแล้ว  ชื่อผู้ใช้: {os.environ.get('ADMIN_USERNAME', 'admin')}"
+            + f"\n  รหัสผ่าน: {generated_password}"
+            + "\n  บันทึกไว้ทันที ข้อความนี้จะไม่แสดงอีก"
+            + "\n  ตั้งเองได้ด้วย ADMIN_PASSWORD ใน .env หรือ scripts/manage_users.py reset\n"
+            + "=" * 72
+        )
+        print(banner, flush=True)
     yield
     close_pool()
 
 
 app = FastAPI(title="Pattaya Smart Tourism API", version="0.2.0", lifespan=lifespan)
+# ตั้งแต่ใช้คุกกี้ session จะเปิด allow_origins=["*"] คู่กับ allow_credentials ไม่ได้
+# เบราว์เซอร์ปฏิเสธการใช้ wildcard กับคำขอที่แนบ credential อยู่แล้ว และเปิดกว้างแบบนั้นก็เสี่ยงถูกสวมสิทธิ์
+# แดชบอร์ดเสิร์ฟจาก origin เดียวกับ API อยู่แล้ว รายการนี้จึงมีไว้เผื่อเรียกจากเครื่องอื่นตอนพัฒนาเท่านั้น
+ALLOWED_ORIGINS = [
+    origin.strip() for origin in
+    os.environ.get("ALLOWED_ORIGINS", "http://127.0.0.1:8000,http://localhost:8000").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -70,7 +96,10 @@ def query(sql: str, parameters: list | tuple = ()) -> list[dict]:
 def _fetch_all(sql: str, parameters: list | tuple) -> list[dict]:
     with get_pool().connection() as connection:
         # ไม่มีพารามิเตอร์ให้ส่ง None เพื่อไม่ให้ psycopg ตีความ % ใน SQL เป็น placeholder
-        return connection.execute(sql, parameters or None).fetchall()
+        cursor = connection.execute(sql, parameters or None)
+        # INSERT/UPDATE/DELETE ที่ไม่มี RETURNING ไม่คืนแถว cursor.description จะเป็น None
+        # ต้องเช็กก่อนเรียก fetchall() ไม่งั้น psycopg จะโยน ProgrammingError
+        return cursor.fetchall() if cursor.description else []
 
 
 def query_one(sql: str, parameters: list | tuple = ()) -> dict | None:
@@ -87,7 +116,7 @@ def cached_fetch(key: str, url: str, ttl_seconds: int) -> Any:
     cached = _external_cache.get(key)
     if cached and now - cached[0] < ttl_seconds:
         return cached[1]
-    request = Request(url, headers={"User-Agent": USER_AGENT})
+    request = HttpRequest(url, headers={"User-Agent": USER_AGENT})
     with urlopen(request, timeout=10) as response:
         payload = json.load(response)
     _external_cache[key] = (now, payload)
@@ -139,11 +168,222 @@ def dashboard() -> FileResponse:
     return FileResponse(BASE_DIR / "static" / "index.html")
 
 
+# ---------------------------------------------------------------- ยืนยันตัวตน
+
+
+def audit(action: str, actor: str | None, target: str | None = None, details: str | None = None) -> None:
+    query(
+        "INSERT INTO audit_logs (action, actor, target, details) VALUES (%s, %s, %s, %s)",
+        [action, actor, target, details],
+    )
+
+
+@app.post("/api/auth/login")
+def login(response: Response, payload: dict = Body(...)) -> dict:
+    username = str(payload.get("username", "")).strip()
+    password = str(payload.get("password", ""))
+    row = query_one("SELECT id, username, password_hash, status FROM users WHERE username = %s", [username])
+    if not row or not auth.verify_password(password, row["password_hash"]):
+        audit("login_failed", username or "(ไม่ระบุ)")
+        # ไม่บอกว่าผิดที่ชื่อผู้ใช้หรือรหัสผ่าน เพื่อไม่ให้ไล่เดาว่ามีชื่อผู้ใช้นี้อยู่จริงหรือไม่
+        raise HTTPException(status_code=401, detail="ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+    # ตรวจสถานะหลังตรวจรหัสผ่านผ่านแล้วเท่านั้น ถ้าตรวจก่อนจะกลายเป็นบอกใบ้ว่ามีบัญชีนี้อยู่
+    if row["status"] == auth.STATUS_PENDING:
+        audit("login_pending", row["username"])
+        raise HTTPException(status_code=403, detail="บัญชีนี้รอผู้ดูแลระบบอนุมัติอยู่ กรุณาติดต่อผู้ดูแลระบบ")
+    if row["status"] != auth.STATUS_ACTIVE:
+        audit("login_rejected", row["username"])
+        raise HTTPException(status_code=403, detail="บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ")
+    token = auth.create_session(query, row["id"])
+    auth.set_session_cookie(response, token)
+    audit("login", row["username"])
+    return {"ok": True}
+
+
+@app.post("/api/auth/register")
+def register(request: Request, payload: dict = Body(...)) -> dict:
+    """สมัครสมาชิกเอง บัญชีที่ได้จะอยู่ในสถานะรออนุมัติ ยังเข้าสู่ระบบไม่ได้จนกว่าผู้ดูแลจะกดอนุมัติ"""
+    client = request.client.host if request.client else "unknown"
+    username = str(payload.get("username", "")).strip()
+    password = str(payload.get("password", ""))
+    role = str(payload.get("role", "")).strip()
+    organization = str(payload.get("organization", "")).strip()
+
+    if not username.isascii() or not username.replace("_", "").replace(".", "").isalnum() or len(username) < 3:
+        raise HTTPException(status_code=400, detail="ชื่อผู้ใช้ต้องเป็นภาษาอังกฤษหรือตัวเลข อย่างน้อย 3 ตัวอักษร")
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษร")
+    if role not in auth.SELF_SIGNUP_ROLES:
+        raise HTTPException(status_code=400, detail="เลือกได้เฉพาะผู้บริหารหรือผู้ประกอบการ")
+
+    # นับโควตาหลังตรวจความถูกต้องของข้อมูลแล้ว คำขอที่กรอกผิดจึงไม่กินโควตา
+    # ไม่งั้นคนกรอกผิดไม่กี่ครั้งจะถูกกันออกไปทั้งชั่วโมง ส่วนการกันสร้างบัญชีรัว ๆ ยังทำได้เหมือนเดิม
+    if not auth.signup_allowed(client):
+        raise HTTPException(status_code=429, detail="สมัครถี่เกินไป กรุณารอสักครู่แล้วลองใหม่")
+
+    # ชื่อซ้ำตอบเหมือนสมัครสำเร็จ เพื่อไม่ให้คนนอกใช้หน้าสมัครไล่เช็กว่ามีชื่อผู้ใช้ไหนอยู่ในระบบบ้าง
+    # ผู้ดูแลจะเห็นว่าไม่มีคำขอใหม่เข้ามา ส่วนคนสมัครจะติดต่อผู้ดูแลเองเมื่อรอแล้วไม่ได้รับอนุมัติ
+    if query_one("SELECT id FROM users WHERE username = %s", [username]):
+        audit("register_duplicate", username, details=f"จาก {client}")
+        return {"ok": True, "status": auth.STATUS_PENDING}
+
+    user = query_one(
+        """INSERT INTO users (username, organization, password_hash, status, requested_role)
+           VALUES (%s, %s, %s, %s, %s) RETURNING id""",
+        [username, organization or None, auth.hash_password(password), auth.STATUS_PENDING, role],
+    )
+    audit("register", username, details=f"ขอบทบาท {role} · {organization or 'ไม่ระบุหน่วยงาน'} · จาก {client}")
+    return {"ok": True, "status": auth.STATUS_PENDING, "id": user["id"]}
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request, response: Response) -> dict:
+    user = auth.load_user(request)
+    auth.delete_session(query, request.cookies.get(auth.SESSION_COOKIE))
+    auth.clear_session_cookie(response)
+    if user:
+        audit("logout", user["username"])
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+def me(request: Request) -> dict:
+    """หน้าเว็บเรียกตอนเปิดหน้า เพื่อรู้ว่าต้องแสดงหน้าล็อกอินหรือซ่อนส่วนไหนบ้าง
+
+    ไม่โยน 401 เพราะ "ยังไม่ได้เข้าสู่ระบบ" เป็นคำตอบปกติของ endpoint นี้ ไม่ใช่ข้อผิดพลาด
+    """
+    user = auth.load_user(request)
+    return {"authenticated": bool(user), "user": user}
+
+
+# ---------------------------------------------------------------- จัดการผู้ใช้ (เฉพาะผู้ดูแลระบบ)
+
+
+@app.get("/api/admin/roles")
+def list_roles(_: dict = Depends(auth.require("manage:users"))) -> list[dict]:
+    return query(
+        """SELECT r.name, r.description,
+                  array_agg(rp.permission ORDER BY rp.permission) AS permissions,
+                  (SELECT COUNT(*) FROM user_roles ur WHERE ur.role_id = r.id) AS users
+           FROM roles r LEFT JOIN role_permissions rp ON rp.role_id = r.id
+           GROUP BY r.id, r.name, r.description ORDER BY r.name"""
+    )
+
+
+@app.get("/api/admin/users")
+def list_users(_: dict = Depends(auth.require("manage:users"))) -> list[dict]:
+    return query(
+        """SELECT u.id, u.username, u.full_name, u.email, u.status, u.requested_role, u.organization,
+                  to_char(u.created_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD HH24:MI') AS created_at,
+                  COALESCE(array_agg(r.name) FILTER (WHERE r.name IS NOT NULL), '{}') AS roles
+           FROM users u
+           LEFT JOIN user_roles ur ON ur.user_id = u.id
+           LEFT JOIN roles r ON r.id = ur.role_id
+           GROUP BY u.id
+           -- คำขอที่รออนุมัติขึ้นก่อนเสมอ ผู้ดูแลจะได้เห็นงานค้างทันทีที่เปิดหน้า
+           ORDER BY (u.status = 'pending') DESC, u.created_at DESC, u.username"""
+    )
+
+
+@app.post("/api/admin/users")
+def create_user(payload: dict = Body(...), actor: dict = Depends(auth.require("manage:users"))) -> dict:
+    username = str(payload.get("username", "")).strip()
+    password = str(payload.get("password", ""))
+    role_name = str(payload.get("role", "")).strip()
+    if not username or len(password) < 8 or role_name not in auth.ROLE_DEFINITIONS:
+        raise HTTPException(status_code=400, detail="ต้องระบุชื่อผู้ใช้ รหัสผ่านอย่างน้อย 8 ตัวอักษร และบทบาทที่มีอยู่จริง")
+    if query_one("SELECT id FROM users WHERE username = %s", [username]):
+        raise HTTPException(status_code=409, detail="มีชื่อผู้ใช้นี้อยู่แล้ว")
+    user = query_one(
+        "INSERT INTO users (username, full_name, email, password_hash) VALUES (%s, %s, %s, %s) RETURNING id",
+        [username, payload.get("full_name") or None, payload.get("email") or None, auth.hash_password(password)],
+    )
+    role = query_one("SELECT id FROM roles WHERE name = %s", [role_name])
+    query("INSERT INTO user_roles (user_id, role_id) VALUES (%s, %s)", [user["id"], role["id"]])
+    audit("create_user", actor["username"], username, f"บทบาท {role_name}")
+    return {"ok": True, "id": user["id"]}
+
+
+@app.post("/api/admin/users/{user_id}/approve")
+def approve_user(user_id: int, payload: dict = Body(default={}), actor: dict = Depends(auth.require("manage:users"))) -> dict:
+    """อนุมัติคำขอสมัคร แล้วให้บทบาทตามที่ผู้ดูแลเลือก (ค่าเริ่มต้นคือบทบาทที่ผู้สมัครขอมา)"""
+    target = query_one("SELECT username, status, requested_role FROM users WHERE id = %s", [user_id])
+    if not target:
+        raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้นี้")
+    if target["status"] == auth.STATUS_ACTIVE:
+        raise HTTPException(status_code=409, detail="บัญชีนี้ใช้งานได้อยู่แล้ว")
+    role_name = str(payload.get("role") or target["requested_role"] or "").strip()
+    if role_name not in auth.ROLE_DEFINITIONS:
+        raise HTTPException(status_code=400, detail="ต้องระบุบทบาทที่มีอยู่จริง")
+    role = query_one("SELECT id FROM roles WHERE name = %s", [role_name])
+    # ให้บทบาทเดียวเสมอ ลบของเดิมก่อนกันกรณีอนุมัติซ้ำหลังเคยถูกปฏิเสธ
+    query("DELETE FROM user_roles WHERE user_id = %s", [user_id])
+    query("INSERT INTO user_roles (user_id, role_id) VALUES (%s, %s)", [user_id, role["id"]])
+    query(
+        "UPDATE users SET status = %s, reviewed_at = now(), reviewed_by = %s WHERE id = %s",
+        [auth.STATUS_ACTIVE, actor["username"], user_id],
+    )
+    audit("approve_user", actor["username"], target["username"], f"ให้บทบาท {role_name}")
+    return {"ok": True}
+
+
+@app.post("/api/admin/users/{user_id}/reject")
+def reject_user(user_id: int, actor: dict = Depends(auth.require("manage:users"))) -> dict:
+    """ปฏิเสธหรือระงับบัญชี เก็บแถวไว้เป็นหลักฐานแทนการลบทิ้ง"""
+    target = query_one("SELECT username FROM users WHERE id = %s", [user_id])
+    if not target:
+        raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้นี้")
+    if user_id == actor["id"]:
+        raise HTTPException(status_code=400, detail="ระงับบัญชีของตัวเองไม่ได้")
+    query(
+        "UPDATE users SET status = %s, reviewed_at = now(), reviewed_by = %s WHERE id = %s",
+        [auth.STATUS_REJECTED, actor["username"], user_id],
+    )
+    # ตัด session ที่ค้างอยู่ ไม่งั้นคนที่เพิ่งถูกระงับยังใช้คุกกี้เดิมต่อได้จนหมดอายุ
+    query("DELETE FROM user_sessions WHERE user_id = %s", [user_id])
+    audit("reject_user", actor["username"], target["username"])
+    return {"ok": True}
+
+
+@app.delete("/api/admin/users/{user_id}")
+def delete_user(user_id: int, actor: dict = Depends(auth.require("manage:users"))) -> dict:
+    if user_id == actor["id"]:
+        raise HTTPException(status_code=400, detail="ลบบัญชีของตัวเองไม่ได้")
+    target = query_one("SELECT username FROM users WHERE id = %s", [user_id])
+    if not target:
+        raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้นี้")
+    remaining = query_one(
+        """SELECT COUNT(*) AS total FROM user_roles ur
+           JOIN roles r ON r.id = ur.role_id
+           JOIN users u ON u.id = ur.user_id
+           WHERE r.name = 'admin' AND u.status = 'active' AND ur.user_id <> %s""",
+        [user_id],
+    )
+    if not remaining["total"]:
+        raise HTTPException(status_code=400, detail="ต้องเหลือผู้ดูแลระบบอย่างน้อยหนึ่งคน")
+    # ลบ session ของผู้ใช้ด้วย ไม่งั้นคนที่ถูกลบยังใช้คุกกี้เดิมต่อได้จนกว่าจะหมดอายุ
+    query("DELETE FROM user_sessions WHERE user_id = %s", [user_id])
+    query("DELETE FROM user_roles WHERE user_id = %s", [user_id])
+    query("DELETE FROM users WHERE id = %s", [user_id])
+    audit("delete_user", actor["username"], target["username"])
+    return {"ok": True}
+
+
+@app.get("/api/admin/audit")
+def audit_log(limit: int = Query(default=50, ge=1, le=500), _: dict = Depends(auth.require("manage:users"))) -> list[dict]:
+    return query(
+        """SELECT action, actor, target, details,
+                  to_char(timestamp AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD HH24:MI:SS') AS timestamp
+           FROM audit_logs ORDER BY timestamp DESC, id DESC LIMIT %s""",
+        [limit],
+    )
+
+
 # ---------------------------------------------------------------- สภาพอากาศ (Open-Meteo)
 
 
 @app.get("/api/weather/live")
-def live_weather() -> dict:
+def live_weather(_: dict = Depends(auth.require("view:overview"))) -> dict:
     parameters = urlencode({
         "latitude": PATTAYA_LATITUDE,
         "longitude": PATTAYA_LONGITUDE,
@@ -165,7 +405,9 @@ def live_weather() -> dict:
 
 
 @app.get("/api/weather/forecast")
-def weather_forecast(days: int = Query(default=7, ge=1, le=16)) -> list[dict]:
+def weather_forecast(days: int = Query(default=7, ge=1, le=16),
+    _: dict = Depends(auth.require("view:overview")),
+) -> list[dict]:
     """พยากรณ์รายวัน ใช้จับคู่กับวันหยุดเพื่อประเมินว่าช่วงวันหยุดที่จะถึงอากาศเอื้อหรือไม่"""
     parameters = urlencode({
         "latitude": PATTAYA_LATITUDE,
@@ -198,7 +440,7 @@ def weather_forecast(days: int = Query(default=7, ge=1, le=16)) -> list[dict]:
 
 
 @app.get("/api/summary")
-def summary() -> dict:
+def summary(_: dict = Depends(auth.require("view:overview"))) -> dict:
     """KPI จากข้อมูลจริงทั้งหมด ไม่มีค่าจำลอง"""
     latest_tourism = query_one(
         """SELECT calendar_year, month_id, month_name, number_of_tourists, location
@@ -254,7 +496,7 @@ def summary() -> dict:
 
 
 @app.get("/api/sources")
-def sources() -> list[dict]:
+def sources(_: dict = Depends(auth.require("view:sources"))) -> list[dict]:
     """แหล่งที่มาของข้อมูลทุกชุดที่นำเข้า ใช้แสดงการอ้างอิงบนแดชบอร์ด"""
     # นำเข้าซ้ำได้หลายครั้ง จึงรายงานยอดของครั้งล่าสุดเท่านั้น ไม่ใช่ผลรวมสะสมของทุกครั้ง
     return query(
@@ -280,7 +522,9 @@ ZONE_RADIUS_DEGREES = 0.005
 
 
 @app.get("/api/zones")
-def zones(year: int | None = Query(default=None)) -> list[dict]:
+def zones(year: int | None = Query(default=None),
+    _: dict = Depends(auth.require("view:spatial")),
+) -> list[dict]:
     """แยกจริงจากชุดข้อมูลปริมาณรถ พร้อมจำนวนธุรกิจท่องเที่ยวรอบแยกจาก OpenStreetMap
 
     แทนที่ข้อมูลรายโซนจำลองเดิม ทุกค่าที่คืนมาอ้างอิงข้อมูลจริงทั้งหมด
@@ -361,7 +605,9 @@ def assign_zone(latitude: float | None, longitude: float | None) -> Optional[dic
 
 
 @app.get("/api/zones/micro")
-def micro_zones(year: int | None = Query(default=None)) -> dict:
+def micro_zones(year: int | None = Query(default=None),
+    _: dict = Depends(auth.require("view:spatial")),
+) -> dict:
     """สรุปความหนาแน่นรายย่านของเมืองพัทยา ใช้ทำการวิเคราะห์การกระจายตัวระดับพื้นที่ย่อย
 
     รวมสถานที่ท่องเที่ยว/ธุรกิจจาก OpenStreetMap กับปริมาณรถรายแยกของเมืองพัทยา
@@ -461,7 +707,7 @@ def micro_zones(year: int | None = Query(default=None)) -> dict:
 
 
 @app.get("/api/trends")
-def trends() -> list[dict]:
+def trends(_: dict = Depends(auth.require("view:overview"))) -> list[dict]:
     """จำนวนนักท่องเที่ยวรายเดือนจาก Open Data เมืองพัทยา พร้อมจำนวนวันหยุดในเดือนนั้น"""
     rows = query(
         """SELECT to_char(make_date(calendar_year, month_id, 1), 'YYYY-MM-DD') AS date,
@@ -480,7 +726,9 @@ def trends() -> list[dict]:
 
 
 @app.get("/api/tourism/monthly")
-def monthly_tourism(year: int | None = Query(default=None)) -> list[dict]:
+def monthly_tourism(year: int | None = Query(default=None),
+    _: dict = Depends(auth.require("view:overview")),
+) -> list[dict]:
     clause = "WHERE calendar_year = %s" if year else ""
     parameters: list[Any] = [year] if year else []
     return query(
@@ -492,7 +740,9 @@ def monthly_tourism(year: int | None = Query(default=None)) -> list[dict]:
 
 
 @app.get("/api/traffic/zones")
-def traffic_zones(year: int | None = Query(default=None), month: int | None = Query(default=None)) -> list[dict]:
+def traffic_zones(year: int | None = Query(default=None), month: int | None = Query(default=None),
+    _: dict = Depends(auth.require("view:spatial")),
+) -> list[dict]:
     clauses: list[str] = []
     parameters: list[Any] = []
     if year:
@@ -513,7 +763,9 @@ def traffic_zones(year: int | None = Query(default=None), month: int | None = Qu
 
 
 @app.get("/api/traffic/trends")
-def traffic_trends(intersection_name: str | None = Query(default=None)) -> list[dict]:
+def traffic_trends(intersection_name: str | None = Query(default=None),
+    _: dict = Depends(auth.require("view:spatial")),
+) -> list[dict]:
     clause = "WHERE intersection_name = %s" if intersection_name else ""
     parameters: list[Any] = [intersection_name] if intersection_name else []
     return query(
@@ -534,6 +786,7 @@ def traffic_trends(intersection_name: str | None = Query(default=None)) -> list[
 def demographics(
     year: int | None = Query(default=None),
     category: str | None = Query(default=None),
+    _: dict = Depends(auth.require("view:demographics")),
 ) -> list[dict]:
     clauses: list[str] = []
     parameters: list[Any] = []
@@ -553,7 +806,9 @@ def demographics(
 
 
 @app.get("/api/poi")
-def poi(category: str | None = Query(default=None), limit: int = Query(default=200, le=3000)) -> list[dict]:
+def poi(category: str | None = Query(default=None), limit: int = Query(default=200, le=3000),
+    _: dict = Depends(auth.require("view:spatial")),
+) -> list[dict]:
     clause = "WHERE category = %s" if category else ""
     parameters: list[Any] = [category] if category else []
     parameters.append(limit)
@@ -565,7 +820,7 @@ def poi(category: str | None = Query(default=None), limit: int = Query(default=2
 
 
 @app.get("/api/poi/categories")
-def poi_categories() -> list[dict]:
+def poi_categories(_: dict = Depends(auth.require("view:spatial"))) -> list[dict]:
     return query(
         """SELECT category, COUNT(*) AS total FROM poi_businesses
            GROUP BY category ORDER BY total DESC"""
@@ -573,7 +828,9 @@ def poi_categories() -> list[dict]:
 
 
 @app.get("/api/holidays")
-def holidays(year: int | None = Query(default=None)) -> list[dict]:
+def holidays(year: int | None = Query(default=None),
+    _: dict = Depends(auth.require("view:overview")),
+) -> list[dict]:
     clause = "WHERE EXTRACT(YEAR FROM date) = %s" if year else ""
     parameters: list[Any] = [year] if year else []
     return query(
@@ -584,7 +841,9 @@ def holidays(year: int | None = Query(default=None)) -> list[dict]:
 
 
 @app.get("/api/holidays/upcoming")
-def upcoming_holidays(limit: int = Query(default=5, ge=1, le=50)) -> list[dict]:
+def upcoming_holidays(limit: int = Query(default=5, ge=1, le=50),
+    _: dict = Depends(auth.require("view:overview")),
+) -> list[dict]:
     return query(
         f"""SELECT date, name, local_name, holiday_type,
                    date - {TODAY_BANGKOK} AS days_away
@@ -611,7 +870,9 @@ IMPACT_CAVEATS = [
 
 
 @app.get("/api/forecast/tourism")
-def tourism_forecast(months: int = Query(default=6, ge=1, le=12)) -> dict:
+def tourism_forecast(months: int = Query(default=6, ge=1, le=12),
+    _: dict = Depends(auth.require("view:forecast")),
+) -> dict:
     """พยากรณ์นักท่องเที่ยวรายเดือน เลือกวิธีจากปีตรวจสอบ และรายงานความแม่นจากปีทดสอบที่ไม่ถูกใช้เลือกวิธี"""
     labels, series = monthly_tourism_series()
     if not series:
@@ -695,7 +956,7 @@ def impact_analysis() -> dict:
 
 
 @app.get("/api/impact")
-def impact() -> dict:
+def impact(_: dict = Depends(auth.require("view:forecast"))) -> dict:
     labels, series = monthly_tourism_series()
     return cached_analysis(f"impact:{len(series)}:{labels[-1] if labels else '-'}", impact_analysis)
 
@@ -721,7 +982,7 @@ def _weather_signal() -> Optional[dict]:
 
 
 @app.get("/api/recommendations")
-def recommendations() -> list[dict]:
+def recommendations(_: dict = Depends(auth.require("view:recommendations"))) -> list[dict]:
     """คำแนะนำที่อนุมานจากสัญญาณข้อมูลจริง ทุกข้อระบุตัวเลขและแหล่งที่มาที่ใช้ตัดสิน"""
     results: list[dict] = []
 
@@ -886,7 +1147,9 @@ def recommendations() -> list[dict]:
 
 
 @app.get("/api/pattaya/report")
-def pattaya_report(source_file: str | None = Query(default=None)) -> dict:
+def pattaya_report(source_file: str | None = Query(default=None),
+    _: dict = Depends(auth.require("view:sources")),
+) -> dict:
     parameters: list[Any] = ["พัทยา ชลบุรี"]
     source_filter = "WHERE sheet_name = %s"
     if source_file:

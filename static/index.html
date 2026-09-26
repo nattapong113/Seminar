@@ -11,18 +11,53 @@
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
-  <div class="app-shell">
+  <!-- หน้าเข้าสู่ระบบ ซ่อนแดชบอร์ดทั้งหมดจนกว่าจะยืนยันตัวตนผ่าน -->
+  <div id="login-screen" hidden>
+    <form class="login-card" id="login-form">
+      <div class="brand-mark">P</div>
+      <h1>ระบบคลังข้อมูลการท่องเที่ยวเมืองพัทยา</h1>
+      <p class="login-sub">กรุณาเข้าสู่ระบบเพื่อใช้งานแดชบอร์ด</p>
+      <label>ชื่อผู้ใช้<input type="text" id="login-username" autocomplete="username" required></label>
+      <label>รหัสผ่าน<input type="password" id="login-password" autocomplete="current-password" required></label>
+      <p class="login-error" id="login-error" hidden></p>
+      <button type="submit" id="login-submit">เข้าสู่ระบบ</button>
+      <p class="login-switch">ยังไม่มีบัญชี? <button type="button" id="show-register">สมัครสมาชิก</button></p>
+    </form>
+
+    <form class="login-card" id="register-form" hidden>
+      <div class="brand-mark">P</div>
+      <h1>สมัครสมาชิก</h1>
+      <p class="login-sub">กรอกข้อมูลเพื่อขอสิทธิ์เข้าใช้งาน ผู้ดูแลระบบจะตรวจสอบและอนุมัติก่อนจึงจะเข้าใช้งานได้</p>
+      <label>ชื่อผู้ใช้ <span class="hint">ภาษาอังกฤษหรือตัวเลข อย่างน้อย 3 ตัว</span>
+        <input type="text" id="reg-username" autocomplete="username" required minlength="3"></label>
+      <label>หน่วยงาน / ชื่อธุรกิจ<input type="text" id="reg-organization" autocomplete="organization"></label>
+      <label>รหัสผ่าน <span class="hint">อย่างน้อย 8 ตัวอักษร</span>
+        <input type="password" id="reg-password" autocomplete="new-password" required minlength="8"></label>
+      <label>ขอสิทธิ์ในฐานะ
+        <select id="reg-role">
+          <option value="operator">ผู้ประกอบการ — ดูภาพรวม แผนที่ พยากรณ์ และข้อเสนอแนะ</option>
+          <option value="executive">ผู้บริหาร — ดูได้ทุกอย่างรวมประชากรแฝงและแหล่งข้อมูล</option>
+        </select></label>
+      <p class="login-error" id="register-error" hidden></p>
+      <p class="login-success" id="register-success" hidden></p>
+      <button type="submit" id="register-submit">ส่งคำขอสมัคร</button>
+      <p class="login-switch">มีบัญชีอยู่แล้ว? <button type="button" id="show-login">เข้าสู่ระบบ</button></p>
+    </form>
+  </div>
+
+  <div class="app-shell" id="app-shell" hidden>
     <aside class="sidebar">
       <div class="brand"><div class="brand-mark">P</div><div><strong>PATTAYA</strong><span>SMART TOURISM</span></div></div>
       <div class="side-label">WORKSPACE</div>
       <nav>
-        <a class="nav-item active" href="#section-overview"><span class="nav-icon">◉</span>ภาพรวมเมือง</a>
-        <a class="nav-item" href="#section-spatial"><span class="nav-icon">⌁</span>พฤติกรรมเชิงพื้นที่</a>
-        <a class="nav-item" href="#section-zones"><span class="nav-icon">▦</span>การกระจายตัวรายย่าน</a>
-        <a class="nav-item" href="#section-trends"><span class="nav-icon">↗</span>แนวโน้มและพยากรณ์</a>
-        <a class="nav-item" href="#section-forecast"><span class="nav-icon">⌥</span>พยากรณ์และผลกระทบ</a>
-        <a class="nav-item" href="#section-context"><span class="nav-icon">▤</span>บริบทเมืองและประชากร</a>
-        <a class="nav-item" href="#section-sources"><span class="nav-icon">⛁</span>แหล่งข้อมูล</a>
+        <a class="nav-item active" data-permission="view:overview" href="#section-overview"><span class="nav-icon">◉</span>ภาพรวมเมือง</a>
+        <a class="nav-item" data-permission="view:spatial" href="#section-spatial"><span class="nav-icon">⌁</span>พฤติกรรมเชิงพื้นที่</a>
+        <a class="nav-item" data-permission="view:spatial" href="#section-zones"><span class="nav-icon">▦</span>การกระจายตัวรายย่าน</a>
+        <a class="nav-item" data-permission="view:overview" href="#section-trends"><span class="nav-icon">↗</span>แนวโน้มและพยากรณ์</a>
+        <a class="nav-item" data-permission="view:forecast" href="#section-forecast"><span class="nav-icon">⌥</span>พยากรณ์และผลกระทบ</a>
+        <a class="nav-item" data-permission="view:demographics" href="#section-context"><span class="nav-icon">▤</span>บริบทเมืองและประชากร</a>
+        <a class="nav-item" data-permission="view:sources" href="#section-sources"><span class="nav-icon">⛁</span>แหล่งข้อมูล</a>
+        <a class="nav-item" data-permission="manage:users" href="#section-admin"><span class="nav-icon">⚿</span>จัดการผู้ใช้</a>
       </nav>
       <div class="sidebar-bottom"><div class="live-dot"></div><div><strong>DATA STREAM</strong><span id="stream-status">กำลังเชื่อมต่อ...</span></div></div>
     </aside>
@@ -30,7 +65,13 @@
     <main class="main-content">
       <header class="topbar">
         <div><p class="eyebrow">CITY INTELLIGENCE / PATTAYA</p><h1>ห้องควบคุมการท่องเที่ยว</h1></div>
-        <button class="report-btn" id="export-btn"><span>↧</span> ออกรายงานผู้บริหาร (PDF)</button>
+        <div class="topbar-right">
+          <div class="user-chip" id="user-chip">
+            <strong id="user-name">—</strong><span id="user-role">—</span>
+          </div>
+          <button class="report-btn" id="export-btn" data-permission="export:report"><span>↧</span> ออกรายงานผู้บริหาร (PDF)</button>
+          <button class="icon-btn" id="logout-btn" title="ออกจากระบบ">⏻</button>
+        </div>
       </header>
 
       <section class="toolbar">
@@ -63,7 +104,7 @@
         </article>
       </section>
 
-      <section class="content-grid" id="section-spatial">
+      <section class="content-grid" id="section-spatial" data-permission="view:spatial">
         <article class="panel map-panel">
           <div class="panel-heading">
             <div><p class="eyebrow">SPATIAL BEHAVIOR</p><h2>ความหนาแน่นเชิงพื้นที่</h2></div>
@@ -85,7 +126,7 @@
         </article>
       </section>
 
-      <section class="content-grid lower-grid" id="section-zones">
+      <section class="content-grid lower-grid" id="section-zones" data-permission="view:spatial">
         <article class="panel">
           <div class="panel-heading">
             <div><p class="eyebrow">MICRO-ZONING</p><h2>การกระจายตัวรายย่าน</h2></div>
@@ -114,7 +155,7 @@
         </article>
       </section>
 
-      <section class="content-grid lower-grid" id="section-forecast">
+      <section class="content-grid lower-grid" id="section-forecast" data-permission="view:forecast">
         <article class="panel chart-panel">
           <div class="panel-heading">
             <div><p class="eyebrow">FORECAST</p><h2>พยากรณ์นักท่องเที่ยวรายเดือน</h2></div>
@@ -148,7 +189,7 @@
         </article>
       </section>
 
-      <section class="content-grid lower-grid" id="section-context">
+      <section class="content-grid lower-grid" id="section-context" data-permission="view:demographics">
         <article class="panel">
           <div class="panel-heading">
             <div><p class="eyebrow">POPULATION</p><h2>ประชากรแฝงจำแนกตามกลุ่ม</h2></div>
@@ -156,9 +197,40 @@
           </div>
           <div class="chart-wrap short"><canvas id="demographic-chart"></canvas></div>
         </article>
-        <article class="panel" id="section-sources">
+        <article class="panel" id="section-sources" data-permission="view:sources">
           <div class="panel-heading"><div><p class="eyebrow">PROVENANCE</p><h2>แหล่งข้อมูลที่เชื่อมต่อ</h2></div></div>
           <div id="source-list" class="source-list"><div class="loading">กำลังอ่าน...</div></div>
+        </article>
+      </section>
+
+      <section class="content-grid lower-grid" id="section-admin" data-permission="manage:users">
+        <article class="panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">USER MANAGEMENT</p><h2>ผู้ใช้งานระบบ</h2></div>
+            <div class="panel-heading-right">
+              <span class="chart-note" id="pending-count">—</span>
+              <button class="icon-btn" id="add-user-btn" title="เพิ่มผู้ใช้">+</button>
+            </div>
+          </div>
+          <form class="user-form" id="user-form" hidden>
+            <input type="text" id="new-username" placeholder="ชื่อผู้ใช้" required>
+            <input type="text" id="new-fullname" placeholder="ชื่อ-นามสกุล">
+            <input type="password" id="new-password" placeholder="รหัสผ่าน (อย่างน้อย 8 ตัว)" minlength="8" required>
+            <select id="new-role">
+              <option value="executive">ผู้บริหาร</option>
+              <option value="operator">ผู้ประกอบการ</option>
+              <option value="admin">ผู้ดูแลระบบ</option>
+            </select>
+            <button type="submit">บันทึก</button>
+          </form>
+          <p class="login-error" id="user-error" hidden></p>
+          <div id="user-list" class="user-list"><div class="loading">กำลังอ่าน...</div></div>
+        </article>
+        <article class="panel">
+          <div class="panel-heading"><div><p class="eyebrow">ROLES &amp; PERMISSIONS</p><h2>บทบาทและสิทธิ์</h2></div></div>
+          <div id="role-list" class="role-list"><div class="loading">กำลังอ่าน...</div></div>
+          <div class="panel-heading" style="margin-top:18px"><div><p class="eyebrow">AUDIT LOG</p><h2>ประวัติการใช้งาน</h2></div></div>
+          <div id="audit-list" class="audit-list"><div class="loading">กำลังอ่าน...</div></div>
         </article>
       </section>
 
