@@ -1,12 +1,27 @@
-const api = (path) => fetch(path).then((response) => {
-  if (!response.ok) throw new Error(`${path} -> ${response.status}`);
+const api = (path, options) => fetch(path, { credentials: 'same-origin', ...options }).then(async (response) => {
+  if (!response.ok) {
+    // session หมดอายุระหว่างใช้งาน ให้กลับไปหน้าเข้าสู่ระบบแทนที่จะปล่อยให้หน้าค้าง
+    if (response.status === 401) showLogin();
+    const body = await response.json().catch(() => ({}));
+    const error = new Error(body.detail || `${path} -> ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
   return response.json();
+});
+
+const postJson = (path, payload) => api(path, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(payload),
 });
 
 const numberFormat = new Intl.NumberFormat('th-TH');
 const compactFormat = new Intl.NumberFormat('th-TH', { notation: 'compact', maximumFractionDigits: 2 });
 const charts = {};
-const state = { demographics: [] };
+const state = { demographics: [], user: null, permissions: [] };
+
+const can = (permission) => state.permissions.includes(permission);
 
 const THAI_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 const PALETTE = ['#ee745b', '#4b90a9', '#e5b84d', '#5da17d', '#9b7fb5', '#c4826a', '#6aaeb0', '#b0616e'];
@@ -522,46 +537,291 @@ function renderImpact(data) {
 
 // ---------------------------------------------------------------- โหลดทั้งหมด
 
+// เรียกเฉพาะเมื่อมีสิทธิ์ ถ้าไม่มีให้คืน null แทนที่จะปล่อยให้ 403 ทำให้ Promise.all ล้มทั้งชุด
+const fetchIf = (permission, path) => (can(permission) ? api(path) : Promise.resolve(null));
+
 async function loadDashboard() {
   const [summary, zones, micro, trends, traffic, recommendations, points, categories, demographics, upcoming, sources, forecast, impact] =
     await Promise.all([
-      api('/api/summary'),
-      api('/api/zones'),
-      api('/api/zones/micro'),
-      api('/api/trends'),
-      api('/api/traffic/trends'),
-      api('/api/recommendations'),
-      api('/api/poi?limit=3000'),
-      api('/api/poi/categories'),
-      api('/api/demographics'),
-      api('/api/holidays/upcoming?limit=4'),
-      api('/api/sources'),
-      api('/api/forecast/tourism?months=6'),
-      api('/api/impact'),
+      fetchIf('view:overview', '/api/summary'),
+      fetchIf('view:spatial', '/api/zones'),
+      fetchIf('view:spatial', '/api/zones/micro'),
+      fetchIf('view:overview', '/api/trends'),
+      fetchIf('view:spatial', '/api/traffic/trends'),
+      fetchIf('view:recommendations', '/api/recommendations'),
+      fetchIf('view:spatial', '/api/poi?limit=3000'),
+      fetchIf('view:spatial', '/api/poi/categories'),
+      fetchIf('view:demographics', '/api/demographics'),
+      fetchIf('view:overview', '/api/holidays/upcoming?limit=4'),
+      fetchIf('view:sources', '/api/sources'),
+      fetchIf('view:forecast', '/api/forecast/tourism?months=6'),
+      fetchIf('view:forecast', '/api/impact'),
     ]);
 
-  renderSummary(summary);
-  renderRanges(trends, traffic);
-  renderMap(zones, points);
-  renderMicroZones(micro);
-  renderRanking(zones);
-  renderTrendChart(trends, traffic);
-  renderRecommendations(recommendations);
-  renderPoiChart(categories);
-  renderDemographics(demographics);
-  renderHolidays(upcoming);
-  renderSources(sources);
-  renderTourismForecast(forecast);
-  renderImpact(impact);
+  if (summary) renderSummary(summary);
+  if (trends) renderRanges(trends, traffic || []);
+  if (zones && points) { renderMap(zones, points); renderRanking(zones); }
+  if (micro) renderMicroZones(micro);
+  if (trends) renderTrendChart(trends, traffic || []);
+  if (recommendations) renderRecommendations(recommendations);
+  if (categories) renderPoiChart(categories);
+  if (demographics) renderDemographics(demographics);
+  if (upcoming) renderHolidays(upcoming);
+  if (sources) renderSources(sources);
+  if (forecast) renderTourismForecast(forecast);
+  if (impact) renderImpact(impact);
 
   // สภาพอากาศเรียก API ภายนอก แยกออกมาเพื่อไม่ให้ทั้งแดชบอร์ดพังถ้าเน็ตมีปัญหา
-  api('/api/weather/live').then(renderLiveWeather).catch(() => {
-    document.querySelector('#weather-live').textContent = 'เชื่อมต่อ Open-Meteo ไม่ได้';
-  });
-  api('/api/weather/forecast?days=7').then(renderForecast).catch(() => {
-    document.querySelector('#forecast-strip').innerHTML = '<div class="loading">เชื่อมต่อพยากรณ์อากาศไม่ได้</div>';
-  });
+  if (can('view:overview')) {
+    api('/api/weather/live').then(renderLiveWeather).catch(() => {
+      document.querySelector('#weather-live').textContent = 'เชื่อมต่อ Open-Meteo ไม่ได้';
+    });
+    api('/api/weather/forecast?days=7').then(renderForecast).catch(() => {
+      document.querySelector('#forecast-strip').innerHTML = '<div class="loading">เชื่อมต่อพยากรณ์อากาศไม่ได้</div>';
+    });
+  }
+
+  if (can('manage:users')) loadAdminPanel();
 }
+
+// ---------------------------------------------------------------- ผู้ใช้และสิทธิ์
+
+function applyPermissions() {
+  // ซ่อนทุกส่วนที่บทบาทนี้ไม่มีสิทธิ์ ฝั่งเซิร์ฟเวอร์ปฏิเสธซ้ำอีกชั้นอยู่แล้ว การซ่อนนี้เป็นเรื่องความสะอาดของหน้าจอ
+  document.querySelectorAll('[data-permission]').forEach((element) => {
+    element.hidden = !can(element.dataset.permission);
+  });
+  setText('user-name', state.user.full_name || state.user.username);
+  setText('user-role', state.user.role_labels.join(' · ') || 'ไม่มีบทบาท');
+}
+
+function showLogin(message) {
+  state.user = null;
+  state.permissions = [];
+  document.querySelector('#app-shell').hidden = true;
+  const screen = document.querySelector('#login-screen');
+  screen.hidden = false;
+  // ถ้าเพิ่งอยู่ที่ฟอร์มสมัคร ต้องสลับกลับมาหน้าเข้าสู่ระบบ ไม่งั้นข้อความแจ้งเตือนจะถูกซ่อนอยู่หลังฟอร์มที่ไม่ได้แสดง
+  switchAuthForm(false);
+  const error = document.querySelector('#login-error');
+  error.hidden = !message;
+  if (message) error.textContent = message;
+}
+
+async function startSession(user) {
+  state.user = user;
+  state.permissions = user.permissions;
+  document.querySelector('#login-screen').hidden = true;
+  document.querySelector('#app-shell').hidden = false;
+  applyPermissions();
+  // แผนที่ถูกสร้างตอน #app-shell ยังซ่อนอยู่ ขนาดที่ Leaflet จำไว้จึงเป็น 0
+  // ต้องสั่งวัดใหม่ "ก่อน" วาดเลเยอร์ ไม่งั้น leaflet.heat จะพังตอนอ่าน canvas ที่กว้าง 0
+  if (window.map) window.map.invalidateSize();
+  await loadDashboard();
+}
+
+async function bootstrap() {
+  const session = await api('/api/auth/me').catch(() => ({ authenticated: false }));
+  if (session.authenticated) {
+    await startSession(session.user);
+  } else {
+    showLogin();
+  }
+}
+
+document.querySelector('#login-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const button = document.querySelector('#login-submit');
+  button.disabled = true;
+  button.textContent = 'กำลังตรวจสอบ...';
+  let session;
+  try {
+    await postJson('/api/auth/login', {
+      username: document.querySelector('#login-username').value,
+      password: document.querySelector('#login-password').value,
+    });
+    session = await api('/api/auth/me');
+  } catch (error) {
+    showLogin(error.message || 'เข้าสู่ระบบไม่สำเร็จ');
+    return;
+  } finally {
+    button.disabled = false;
+    button.textContent = 'เข้าสู่ระบบ';
+  }
+  document.querySelector('#login-password').value = '';
+  document.querySelector('#login-error').hidden = true;
+  // แยก catch ออกจากขั้นตอนเข้าสู่ระบบ ถ้าวาดแดชบอร์ดพลาดไม่ควรเด้งผู้ใช้กลับหน้าล็อกอิน
+  // ทั้งที่ยืนยันตัวตนผ่านแล้ว ให้แจ้งที่แถบสถานะแทน
+  await startSession(session.user).catch((error) => {
+    console.error('Dashboard loading failed:', error);
+    setText('stream-status', 'โหลดข้อมูลไม่สำเร็จ');
+  });
+});
+
+// ---------------------------------------------------------------- สมัครสมาชิก
+
+function switchAuthForm(showRegister) {
+  document.querySelector('#login-form').hidden = showRegister;
+  document.querySelector('#register-form').hidden = !showRegister;
+  document.querySelector('#login-error').hidden = true;
+  document.querySelector('#register-error').hidden = true;
+  document.querySelector('#register-success').hidden = true;
+}
+
+document.querySelector('#show-register').addEventListener('click', () => switchAuthForm(true));
+document.querySelector('#show-login').addEventListener('click', () => switchAuthForm(false));
+
+document.querySelector('#register-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const button = document.querySelector('#register-submit');
+  const error = document.querySelector('#register-error');
+  const success = document.querySelector('#register-success');
+  error.hidden = true;
+  success.hidden = true;
+  button.disabled = true;
+  button.textContent = 'กำลังส่งคำขอ...';
+  try {
+    await postJson('/api/auth/register', {
+      username: document.querySelector('#reg-username').value.trim(),
+      organization: document.querySelector('#reg-organization').value.trim(),
+      password: document.querySelector('#reg-password').value,
+      role: document.querySelector('#reg-role').value,
+    });
+    event.target.reset();
+    success.hidden = false;
+    success.textContent = 'ส่งคำขอเรียบร้อยแล้ว บัญชีจะใช้งานได้หลังผู้ดูแลระบบอนุมัติ';
+  } catch (caught) {
+    error.hidden = false;
+    error.textContent = caught.message || 'สมัครสมาชิกไม่สำเร็จ';
+  } finally {
+    button.disabled = false;
+    button.textContent = 'ส่งคำขอสมัคร';
+  }
+});
+
+document.querySelector('#logout-btn').addEventListener('click', async () => {
+  await postJson('/api/auth/logout', {}).catch(() => {});
+  showLogin();
+});
+
+// ---------------------------------------------------------------- แผงผู้ดูแลระบบ
+
+const ROLE_LABELS = { admin: 'ผู้ดูแลระบบ', executive: 'ผู้บริหาร', operator: 'ผู้ประกอบการ' };
+
+async function loadAdminPanel() {
+  const [users, roles, log] = await Promise.all([
+    api('/api/admin/users'), api('/api/admin/roles'), api('/api/admin/audit?limit=20'),
+  ]);
+
+  const pending = users.filter((user) => user.status === 'pending');
+  setText('pending-count', pending.length ? `${pending.length} คำขอรออนุมัติ` : 'ไม่มีคำขอค้าง');
+
+  document.querySelector('#user-list').innerHTML = users.map((user) => {
+    const roleText = user.roles.map((role) => ROLE_LABELS[role] || role).join(', ');
+    // คนที่สมัครเองไม่มีชื่อ-นามสกุล หัวแถวจึงเป็นชื่อผู้ใช้อยู่แล้ว ไม่ต้องขึ้นซ้ำในบรรทัดล่าง
+    const subName = user.full_name ? `${escapeHtml(user.username)} · ` : '';
+    if (user.status === 'pending') {
+      return `
+      <div class="user-row is-pending">
+        <div>
+          <strong>${escapeHtml(user.full_name || user.username)} <em class="status-tag">รออนุมัติ</em></strong>
+          <span>${subName}${user.organization ? `${escapeHtml(user.organization)} · ` : ''}ขอสิทธิ์ ${
+            ROLE_LABELS[user.requested_role] || user.requested_role || '-'} · ${escapeHtml(user.created_at)}</span>
+        </div>
+        <div class="review-actions">
+          <select data-approve-role="${user.id}">
+            <option value="operator"${user.requested_role === 'operator' ? ' selected' : ''}>ผู้ประกอบการ</option>
+            <option value="executive"${user.requested_role === 'executive' ? ' selected' : ''}>ผู้บริหาร</option>
+            <option value="admin">ผู้ดูแลระบบ</option>
+          </select>
+          <button class="approve-btn" data-approve-user="${user.id}">อนุมัติ</button>
+          <button class="icon-btn" data-reject-user="${user.id}" title="ปฏิเสธคำขอ">✕</button>
+        </div>
+      </div>`;
+    }
+    return `
+      <div class="user-row">
+        <div>
+          <strong>${escapeHtml(user.full_name || user.username)}${
+            user.status === 'rejected' ? ' <em class="status-tag is-rejected">ถูกระงับ</em>' : ''
+          }</strong>
+          <span>${subName}${roleText || 'ไม่มีบทบาท'}</span>
+        </div>
+        <button class="icon-btn" data-delete-user="${user.id}" title="ลบผู้ใช้"
+          ${user.id === state.user.id ? 'disabled' : ''}>✕</button>
+      </div>`;
+  }).join('');
+
+  document.querySelector('#role-list').innerHTML = roles.map((role) => `
+    <div class="role-row">
+      <div class="role-head">
+        <strong>${escapeHtml(role.description || role.name)}</strong>
+        <span>${role.users} คน</span>
+      </div>
+      <div class="role-perms">${role.permissions.filter(Boolean).map((p) => `<code>${escapeHtml(p)}</code>`).join('')}</div>
+    </div>`).join('');
+
+  document.querySelector('#audit-list').innerHTML = log.map((row) => `
+    <div class="audit-row">
+      <span class="audit-time">${escapeHtml(row.timestamp)}</span>
+      <span>${escapeHtml(row.action)} · ${escapeHtml(row.actor || '-')}${row.target ? ` → ${escapeHtml(row.target)}` : ''}</span>
+    </div>`).join('') || '<div class="loading">ยังไม่มีประวัติ</div>';
+
+  // ทุกปุ่มทำงานเดียวกัน คือเรียก API แล้วโหลดรายการใหม่ ต่างกันแค่ปลายทางและข้อความยืนยัน
+  const wire = (attribute, run, confirmText) => {
+    document.querySelectorAll(`[${attribute}]`).forEach((button) => {
+      button.addEventListener('click', async () => {
+        const row = users.find((user) => String(user.id) === button.getAttribute(attribute));
+        if (confirmText && !confirm(confirmText(row))) return;
+        button.disabled = true;
+        try {
+          await run(row);
+          await loadAdminPanel();
+        } catch (error) {
+          showUserError(error.message);
+          button.disabled = false;
+        }
+      });
+    });
+  };
+
+  wire('data-approve-user', (row) => postJson(`/api/admin/users/${row.id}/approve`, {
+    role: document.querySelector(`[data-approve-role="${row.id}"]`).value,
+  }));
+  wire('data-reject-user', (row) => postJson(`/api/admin/users/${row.id}/reject`, {}),
+    (row) => `ปฏิเสธคำขอของ ${row.username} ?`);
+  wire('data-delete-user', (row) => api(`/api/admin/users/${row.id}`, { method: 'DELETE' }),
+    (row) => `ลบผู้ใช้ ${row.username} ?`);
+}
+
+function showUserError(message) {
+  const element = document.querySelector('#user-error');
+  element.hidden = !message;
+  element.textContent = message || '';
+}
+
+document.querySelector('#add-user-btn').addEventListener('click', () => {
+  const form = document.querySelector('#user-form');
+  form.hidden = !form.hidden;
+});
+
+document.querySelector('#user-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  showUserError('');
+  try {
+    await postJson('/api/admin/users', {
+      username: document.querySelector('#new-username').value.trim(),
+      full_name: document.querySelector('#new-fullname').value.trim(),
+      password: document.querySelector('#new-password').value,
+      role: document.querySelector('#new-role').value,
+    });
+    event.target.reset();
+    event.target.hidden = true;
+    await loadAdminPanel();
+  } catch (error) {
+    showUserError(error.message);
+  }
+});
 
 window.map = L.map('map', { zoomControl: false }).setView([12.933, 100.885], 13);
 L.control.zoom({ position: 'bottomright' }).addTo(window.map);
@@ -756,7 +1016,7 @@ document.querySelector('#export-btn').addEventListener('click', async () => {
   }
 });
 
-loadDashboard().catch((error) => {
+bootstrap().catch((error) => {
   console.error('Dashboard loading failed:', error);
   document.querySelector('#stream-status').textContent = 'โหลดข้อมูลไม่สำเร็จ';
 });
