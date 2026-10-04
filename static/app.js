@@ -19,7 +19,7 @@ const postJson = (path, payload) => api(path, {
 const numberFormat = new Intl.NumberFormat('th-TH');
 const compactFormat = new Intl.NumberFormat('th-TH', { notation: 'compact', maximumFractionDigits: 2 });
 const charts = {};
-const state = { demographics: [], user: null, permissions: [] };
+const state = { demographics: [], user: null, permissions: [], page: null, mapData: null };
 
 const can = (permission) => state.permissions.includes(permission);
 
@@ -126,9 +126,20 @@ function renderMap(zones, points) {
   applyLayerVisibility();
 }
 
+// แผนที่วาดได้เฉพาะตอนหน้าเชิงพื้นที่แสดงอยู่ ถ้าหน้าถูกซ่อน แผนที่จะกว้าง 0 แล้ว leaflet.heat พังตอนอ่าน canvas
+// ข้อมูลที่โหลดมาระหว่างอยู่หน้าอื่นจึงพักไว้ใน state.mapData แล้ววาดตอนเปิดหน้านี้
+function drawMap() {
+  if (state.page !== 'spatial') return;
+  // ขนาดที่ Leaflet จำไว้ตอนถูกซ่อนเป็น 0 ต้องสั่งวัดใหม่ "ก่อน" วาดเลเยอร์
+  window.map.invalidateSize();
+  if (state.mapData) renderMap(...state.mapData);
+  else applyLayerVisibility();
+  state.mapData = null;
+}
+
 function applyLayerVisibility() {
   const showZone = document.querySelector('#layer-zone').checked;
-  const showPoi = document.querySelector('#layer-poi').checked;
+  const showPoi = document.querySelector('#layer-poi').checked && state.page === 'spatial';
   const showTraffic = document.querySelector('#layer-traffic').checked;
   if (window.zoneLayer) showZone ? window.zoneLayer.addTo(window.map) : window.map.removeLayer(window.zoneLayer);
   if (window.poiHeat) showPoi ? window.poiHeat.addTo(window.map) : window.map.removeLayer(window.poiHeat);
@@ -560,7 +571,7 @@ async function loadDashboard() {
 
   if (summary) renderSummary(summary);
   if (trends) renderRanges(trends, traffic || []);
-  if (zones && points) { renderMap(zones, points); renderRanking(zones); }
+  if (zones && points) { state.mapData = [zones, points]; drawMap(); renderRanking(zones); }
   if (micro) renderMicroZones(micro);
   if (trends) renderTrendChart(trends, traffic || []);
   if (recommendations) renderRecommendations(recommendations);
@@ -581,15 +592,40 @@ async function loadDashboard() {
     });
   }
 
+  if (can('manage:data')) loadDataPanel();
   if (can('manage:users')) loadAdminPanel();
 }
+
+// ---------------------------------------------------------------- สลับหน้า
+
+function showPage(page) {
+  // หน้าที่ขอมาอาจไม่มีอยู่หรือบทบาทนี้ไม่มีสิทธิ์ (เช่น เปิดลิงก์ที่คนอื่นส่งมา) ให้ไปหน้าแรกที่เข้าได้แทน
+  const links = [...document.querySelectorAll('.nav-item[data-page]')].filter((link) => !link.hidden);
+  const target = links.find((link) => link.dataset.page === page) || links[0];
+  if (!target) return;
+  state.page = target.dataset.page;
+  document.querySelectorAll('.main-content [data-page]').forEach((section) => {
+    section.classList.toggle('page-hidden', section.dataset.page !== state.page);
+  });
+  document.querySelectorAll('.nav-item').forEach((link) => link.classList.toggle('active', link === target));
+  if (state.page === 'spatial') drawMap();
+  else if (window.poiHeat) window.map.removeLayer(window.poiHeat);
+}
+
+// เมนูเป็นลิงก์ #ชื่อหน้า จึงรีเฟรชแล้วอยู่หน้าเดิม และปุ่มย้อนกลับของเบราว์เซอร์ใช้ได้
+window.addEventListener('hashchange', () => {
+  if (!state.user) return;
+  showPage(location.hash.slice(1));
+  window.scrollTo(0, 0);
+});
 
 // ---------------------------------------------------------------- ผู้ใช้และสิทธิ์
 
 function applyPermissions() {
   // ซ่อนทุกส่วนที่บทบาทนี้ไม่มีสิทธิ์ ฝั่งเซิร์ฟเวอร์ปฏิเสธซ้ำอีกชั้นอยู่แล้ว การซ่อนนี้เป็นเรื่องความสะอาดของหน้าจอ
+  // ระบุได้หลายสิทธิ์คั่นด้วยเว้นวรรค มีสิทธิ์ใดสิทธิ์หนึ่งก็เห็น (ใช้กับเมนูของหน้าที่มีเนื้อหาหลายกลุ่มสิทธิ์)
   document.querySelectorAll('[data-permission]').forEach((element) => {
-    element.hidden = !can(element.dataset.permission);
+    element.hidden = !element.dataset.permission.split(' ').some(can);
   });
   setText('user-name', state.user.full_name || state.user.username);
   setText('user-role', state.user.role_labels.join(' · ') || 'ไม่มีบทบาท');
@@ -614,9 +650,7 @@ async function startSession(user) {
   document.querySelector('#login-screen').hidden = true;
   document.querySelector('#app-shell').hidden = false;
   applyPermissions();
-  // แผนที่ถูกสร้างตอน #app-shell ยังซ่อนอยู่ ขนาดที่ Leaflet จำไว้จึงเป็น 0
-  // ต้องสั่งวัดใหม่ "ก่อน" วาดเลเยอร์ ไม่งั้น leaflet.heat จะพังตอนอ่าน canvas ที่กว้าง 0
-  if (window.map) window.map.invalidateSize();
+  showPage(location.hash.slice(1));
   await loadDashboard();
 }
 
@@ -702,6 +736,106 @@ document.querySelector('#register-form').addEventListener('submit', async (event
 document.querySelector('#logout-btn').addEventListener('click', async () => {
   await postJson('/api/auth/logout', {}).catch(() => {});
   showLogin();
+});
+
+// ---------------------------------------------------------------- จัดการข้อมูล
+
+async function loadDataPanel() {
+  const [imports, refresh] = await Promise.all([api('/api/admin/imports'), api('/api/admin/refresh')]);
+
+  document.querySelector('#import-list').innerHTML = imports.map((row) => {
+    const failed = row.records_failed > 0 || row.first_error;
+    const outcome = failed
+      ? `ไม่สำเร็จ${row.first_error ? ` — ${escapeHtml(row.first_error)}` : ''}`
+      : `${numberFormat.format(row.records_success ?? 0)} ระเบียน`;
+    return `
+    <div class="audit-row${failed ? ' is-failed' : ''}">
+      <span class="audit-time">${escapeHtml(row.imported_at)}</span>
+      <span>${escapeHtml(row.name)} · ${outcome}${row.notes ? ` · ${escapeHtml(row.notes)}` : ''}</span>
+    </div>`;
+  }).join('') || '<div class="loading">ยังไม่มีประวัติ</div>';
+
+  setText('refresh-mode', refresh.enabled ? 'เปิดอยู่' : 'ปิดอยู่ (AUTO_REFRESH=0)');
+  document.querySelector('#refresh-list').innerHTML = refresh.jobs.map((job) => {
+    const tag = job.error
+      ? `<em class="status-tag" title="${escapeHtml(job.error)}">ดึงไม่สำเร็จ</em>`
+      : (job.due ? '<em class="status-tag is-rejected">ถึงรอบ</em>' : '');
+    const last = job.last_run
+      ? `ล่าสุด ${escapeHtml(job.last_run)} · ${numberFormat.format(job.records ?? 0)} ระเบียน`
+      : 'ยังไม่เคยนำเข้า';
+    return `
+    <div class="user-row">
+      <div>
+        <strong>${escapeHtml(job.label)} ${tag}</strong>
+        <span>${last} · ทุก ${job.interval_hours / 24} วัน · ${escapeHtml(job.source_name)}</span>
+      </div>
+      <button class="approve-btn" data-refresh-job="${job.key}">อัปเดตตอนนี้</button>
+    </div>`;
+  }).join('');
+
+  document.querySelectorAll('[data-refresh-job]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const error = document.querySelector('#refresh-error');
+      error.hidden = true;
+      button.disabled = true;
+      button.textContent = 'กำลังดึง...';
+      try {
+        await postJson(`/api/admin/refresh/${button.dataset.refreshJob}`, {});
+        // ตัวเลขบนแดชบอร์ดคำนวณจากข้อมูลชุดนี้ จึงโหลดใหม่ทั้งหน้า (รวมแผงนี้ด้วย)
+        await loadDashboard();
+      } catch (caught) {
+        error.hidden = false;
+        error.textContent = caught.message;
+        await loadDataPanel();
+      }
+    });
+  });
+}
+
+function renderUploadResult(result) {
+  const box = document.querySelector('#upload-result');
+  box.hidden = false;
+  const notes = result.notes.map((note) => `<br>${escapeHtml(note)}`).join('');
+  if (!result.errors.length) {
+    box.className = 'upload-result login-success';
+    box.innerHTML = `นำเข้า ${escapeHtml(result.filename)} สำเร็จ — ${escapeHtml(result.label)} ${
+      numberFormat.format(result.records_success)} ระเบียน${notes}`;
+    return;
+  }
+  box.className = 'upload-result login-error';
+  box.innerHTML = `นำเข้า ${escapeHtml(result.filename)} ไม่สำเร็จ ข้อมูลเดิมไม่ถูกแก้ไข${notes}
+    <ul class="upload-errors">${result.errors.map((error) => (
+      `<li>${error.row_number ? `บรรทัด ${error.row_number}: ` : ''}${escapeHtml(error.error_text)}</li>`
+    )).join('')}</ul>`;
+}
+
+document.querySelector('#upload-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const file = document.querySelector('#upload-file').files[0];
+  if (!file) return;
+  const button = document.querySelector('#upload-submit');
+  button.disabled = true;
+  button.textContent = 'กำลังนำเข้า...';
+  try {
+    // ส่งไฟล์เป็น body ดิบ ชื่อไฟล์ไปทาง query เซิร์ฟเวอร์ไม่ได้รับ multipart
+    const result = await api(`/api/admin/imports?filename=${encodeURIComponent(file.name)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: file,
+    });
+    renderUploadResult(result);
+    event.target.reset();
+    if (result.errors.length) await loadDataPanel();
+    else await loadDashboard();
+  } catch (caught) {
+    const box = document.querySelector('#upload-result');
+    box.hidden = false;
+    box.className = 'upload-result login-error';
+    box.textContent = caught.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = 'นำเข้า';
+  }
 });
 
 // ---------------------------------------------------------------- แผงผู้ดูแลระบบ
@@ -839,13 +973,6 @@ window.addEventListener('beforeprint', () => {
   if (window.poiHeat && window.map.hasLayer(window.poiHeat)) window.map.removeLayer(window.poiHeat);
 });
 window.addEventListener('afterprint', applyLayerVisibility);
-
-document.querySelectorAll('.nav-item').forEach((item) => {
-  item.addEventListener('click', () => {
-    document.querySelectorAll('.nav-item').forEach((other) => other.classList.remove('active'));
-    item.classList.add('active');
-  });
-});
 
 // ---------------------------------------------------------------- รายงานผู้บริหาร
 
@@ -1003,9 +1130,18 @@ document.querySelector('#export-btn').addEventListener('click', async () => {
       api('/api/impact'),
       api('/api/recommendations'),
     ]);
+    // กราฟในหน้าที่ซ่อนอยู่มีขนาด 0 แปลงเป็นรูปลงรายงานไม่ได้ จึงสลับไปหน้าพยากรณ์ให้กราฟวาดตามขนาดจริงก่อน
+    // ทั้งหมดเกิดในจังหวะเดียวก่อนเบราว์เซอร์วาดจอ ผู้ใช้จึงไม่เห็นหน้ากระพริบ
+    const currentPage = state.page;
+    if (charts.forecast && currentPage !== 'forecast') {
+      showPage('forecast');
+      charts.forecast.resize();
+      charts.forecast.update('none');
+    }
     document.querySelector('#print-report').innerHTML = buildReport({
       summary, sources, forecast, impact, recommendations, micro: state.microZones,
     });
+    showPage(currentPage);
     window.print();
   } catch (error) {
     console.error('สร้างรายงานไม่สำเร็จ:', error);

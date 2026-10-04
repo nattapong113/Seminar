@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import io
 import json
 import os
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
@@ -14,9 +16,12 @@ from urllib.request import Request as HttpRequest, urlopen
 
 import psycopg
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+
+from scripts import import_csv, import_excel, refresh_data
 
 from . import analytics, auth
 from .database import close_pool, get_pool, initialize_database
@@ -41,6 +46,14 @@ PUBLIC_HOLIDAY_ONLY = "COALESCE(holiday_type, 'public') <> 'observance'"
 
 HOLIDAY_SOURCE = "Thai Public Holidays Calendar (iCalendar)"
 
+# อัปเดตข้อมูลจาก API ภายนอกเองระหว่างที่เซิร์ฟเวอร์เปิดอยู่ ตั้ง AUTO_REFRESH=0 ใน .env เพื่อปิด
+AUTO_REFRESH = os.environ.get("AUTO_REFRESH", "1") == "1"
+REFRESH_FIRST_CHECK_SECONDS = 30
+REFRESH_CHECK_SECONDS = 3600
+
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+UPLOAD_EXTENSIONS = (".csv", ".xlsx")
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -61,7 +74,11 @@ async def lifespan(_app: FastAPI):
             + "=" * 72
         )
         print(banner, flush=True)
+    stop_refresh = threading.Event()
+    if AUTO_REFRESH:
+        threading.Thread(target=refresh_loop, args=(stop_refresh,), daemon=True).start()
     yield
+    stop_refresh.set()
     close_pool()
 
 
@@ -391,6 +408,121 @@ def audit_log(limit: int = Query(default=50, ge=1, le=500), _: dict = Depends(au
            FROM audit_logs ORDER BY timestamp DESC, id DESC LIMIT %s""",
         [limit],
     )
+
+
+# ---------------------------------------------------------------- จัดการข้อมูล (นำเข้าไฟล์ / อัปเดตอัตโนมัติ)
+
+
+def store_upload(filename: str, data: bytes) -> dict:
+    with get_pool().connection() as connection:
+        if filename.lower().endswith(".csv"):
+            return import_csv.import_rows(connection, filename, import_csv.decode_csv(data, filename))
+
+        import_id = import_csv.create_import_record(connection, None, "excel", filename, filename, None, 0)
+        result = {"import_id": import_id, "filename": filename, "label": "รายงาน Excel", "records_total": 0,
+                  "records_success": 0, "records_failed": 0, "notes": [], "errors": []}
+        try:
+            # pool เป็น autocommit ต้องเปิด transaction เอง ถ้าไฟล์พังกลางทาง ข้อมูลเดิมของไฟล์นี้จะยังอยู่ครบ
+            with connection.transaction():
+                counts = import_excel.import_workbook(io.BytesIO(data), connection, filename)
+        except Exception as exc:
+            result["errors"] = [{"row_number": None, "error_text": f"อ่านไฟล์ Excel ไม่ได้: {exc}"}]
+            connection.execute(
+                "INSERT INTO import_errors (import_id, error_text) VALUES (%s, %s)", (import_id, result["errors"][0]["error_text"])
+            )
+            return result
+        result.update(records_total=counts["cells"], records_success=counts["cells"])
+        result["notes"] = [f"{counts['sheets']} ชีต · ตัวชี้วัดของชีตพัทยา {counts['metrics']} รายการ"]
+        connection.execute(
+            "UPDATE imports SET records_total = %s, records_success = %s, notes = %s WHERE id = %s",
+            (counts["cells"], counts["cells"], result["notes"][0], import_id),
+        )
+        import_csv.attach_data_source(connection, import_id, Path(filename).stem, "excel")
+        return result
+
+
+@app.post("/api/admin/imports")
+async def upload_import(request: Request, filename: str = Query(...),
+    actor: dict = Depends(auth.require("manage:data")),
+) -> dict:
+    """รับไฟล์เป็น body ดิบ ส่วนชื่อไฟล์มาทาง query ไม่ใช้ multipart เพราะต้องเพิ่มไลบรารี python-multipart"""
+    # เบราว์เซอร์บน Windows บางตัวส่งมาทั้ง path เก็บเฉพาะชื่อไฟล์
+    name = Path(filename.replace("\\", "/")).name.strip()
+    if not name.lower().endswith(UPLOAD_EXTENSIONS):
+        raise HTTPException(status_code=400, detail="รองรับเฉพาะไฟล์ .csv และ .xlsx")
+    too_large = HTTPException(status_code=413, detail=f"ไฟล์ใหญ่เกิน {MAX_UPLOAD_BYTES // (1024 * 1024)} MB")
+    # ตรวจจาก header ก่อน จะได้ไม่ต้องอ่านไฟล์ใหญ่เข้าหน่วยความจำทั้งก้อนแล้วค่อยปฏิเสธ
+    if int(request.headers.get("content-length") or 0) > MAX_UPLOAD_BYTES:
+        raise too_large
+    data = await request.body()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise too_large
+    if not data:
+        raise HTTPException(status_code=400, detail="ไฟล์ว่าง")
+    try:
+        result = await run_in_threadpool(store_upload, name, data)
+    except ValueError as exc:  # ถอดรหัสตัวอักษรของไฟล์ไม่ได้
+        raise HTTPException(status_code=400, detail=str(exc))
+    # ผลพยากรณ์และผลกระทบคำนวณจากข้อมูลที่เพิ่งเปลี่ยน ต้องคำนวณใหม่
+    _analysis_cache.clear()
+    audit(
+        "import_failed" if result["errors"] else "import_data", actor["username"], name,
+        f"{result['label'] or 'ไม่รู้จักรูปแบบ'} · สำเร็จ {result['records_success']} จาก {result['records_total']} แถว",
+    )
+    return result
+
+
+@app.get("/api/admin/imports")
+def list_imports(limit: int = Query(default=15, ge=1, le=200),
+    _: dict = Depends(auth.require("manage:data")),
+) -> list[dict]:
+    return query(
+        """SELECT i.id, COALESCE(i.raw_filename, i.source_name) AS name, i.import_type,
+                  to_char(i.imported_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD HH24:MI') AS imported_at,
+                  i.records_total, i.records_success, i.records_failed, i.notes,
+                  (SELECT e.error_text FROM import_errors e WHERE e.import_id = i.id ORDER BY e.id LIMIT 1) AS first_error
+           FROM imports i ORDER BY i.imported_at DESC, i.id DESC LIMIT %s""",
+        [limit],
+    )
+
+
+def record_refresh(outcome: dict, actor: str) -> None:
+    if outcome["ok"]:
+        _analysis_cache.clear()
+        audit("refresh_data", actor, outcome["label"], f"{outcome['records']} ระเบียน")
+    elif outcome["first_failure"]:
+        audit("refresh_failed", actor, outcome["label"], outcome["error"])
+
+
+def refresh_loop(stop: threading.Event) -> None:
+    """รันในเธรดเบื้องหลัง ตรวจทุกชั่วโมงว่ามีชุดข้อมูลไหนถึงรอบอัปเดต งานที่พังจะถูกลองใหม่ในรอบถัดไป"""
+    delay = REFRESH_FIRST_CHECK_SECONDS
+    while not stop.wait(delay):
+        delay = REFRESH_CHECK_SECONDS
+        try:
+            for outcome in refresh_data.run():
+                record_refresh(outcome, "system")
+        except Exception as exc:  # ฐานข้อมูลต่อไม่ได้ชั่วคราว ไม่ควรทำให้เธรดตายแล้วไม่อัปเดตอีกเลย
+            print(f"อัปเดตข้อมูลอัตโนมัติไม่สำเร็จ: {exc}", flush=True)
+
+
+@app.get("/api/admin/refresh")
+def refresh_status(_: dict = Depends(auth.require("manage:data"))) -> dict:
+    return {
+        "enabled": AUTO_REFRESH,
+        "jobs": refresh_data.status(query(refresh_data.LAST_RUN_SQL, [refresh_data.SOURCE_NAMES])),
+    }
+
+
+@app.post("/api/admin/refresh/{key}")
+def refresh_now(key: str, actor: dict = Depends(auth.require("manage:data"))) -> dict:
+    if key not in refresh_data.JOBS:
+        raise HTTPException(status_code=404, detail="ไม่พบชุดข้อมูลนี้")
+    outcome = next(refresh_data.run([key], force=True))
+    record_refresh(outcome, actor["username"])
+    if not outcome["ok"]:
+        raise HTTPException(status_code=502, detail=f"อัปเดตไม่สำเร็จ: {outcome['error']}")
+    return outcome
 
 
 # ---------------------------------------------------------------- สภาพอากาศ (Open-Meteo)

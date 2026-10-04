@@ -18,6 +18,8 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.database import connect, initialize_database
 
 SOURCE_NAME = "OpenStreetMap Overpass API"
+# overpass-api.de ตอบ 406 ถ้า User-Agent เป็นค่ากลาง ๆ อย่าง "Mozilla/5.0" ต้องระบุชื่อโปรแกรมที่เรียก
+USER_AGENT = "PattayaSmartTourism/0.1 (academic prototype)"
 # Pattaya bounding box: south, west, north, east
 BBOX = (12.85, 100.83, 12.98, 100.95)
 OVERPASS_ENDPOINTS = [
@@ -41,7 +43,7 @@ def fetch_poi() -> dict:
     last_error: Optional[Exception] = None
     for endpoint in OVERPASS_ENDPOINTS:
         try:
-            request = Request(endpoint, data=body, headers={"User-Agent": "Mozilla/5.0"})
+            request = Request(endpoint, data=body, headers={"User-Agent": USER_AGENT})
             with urlopen(request, timeout=60) as response:
                 payload = json.load(response)
             if payload.get("elements"):
