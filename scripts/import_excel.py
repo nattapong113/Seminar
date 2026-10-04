@@ -5,7 +5,7 @@ import math
 import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 import psycopg
 from openpyxl import load_workbook
@@ -102,9 +102,10 @@ def extract_metrics(worksheet: Any, source_file: str) -> list[tuple[Any, ...]]:
     return metrics
 
 
-def import_workbook(workbook_path: Path, connection: psycopg.Connection) -> dict[str, int]:
-    workbook = load_workbook(workbook_path, read_only=True, data_only=True)
-    source_file = workbook_path.name
+def import_workbook(workbook: Path | BinaryIO, connection: psycopg.Connection, source_file: str | None = None) -> dict[str, int]:
+    """workbook เป็น path หรือไฟล์ที่เปิดไว้ในหน่วยความจำก็ได้ (หน้าเว็บส่งแบบหลัง ต้องระบุ source_file เอง)"""
+    source_file = source_file or Path(workbook).name
+    workbook = load_workbook(workbook, read_only=True, data_only=True)
     imported_cells = 0
     imported_metrics = 0
 

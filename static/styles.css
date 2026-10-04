@@ -145,6 +145,15 @@ a.nav-item{text-decoration:none}
 .audit-time{font:9px 'DM Mono';color:#9ba7a9;white-space:nowrap}
 @media print{#login-screen{display:none!important}}
 
+/* ---------------------------------------------------------------- จัดการข้อมูล */
+.upload-form{display:flex;gap:7px;align-items:center}
+.upload-form input{flex:1;min-width:0;border:1px solid var(--line);padding:7px 9px;font:400 11px 'IBM Plex Sans Thai';background:white}
+.upload-form button{background:var(--coral);border:0;color:white;padding:9px 16px;font:600 12px 'IBM Plex Sans Thai';cursor:pointer;white-space:nowrap}
+.upload-form button:disabled{opacity:.5;cursor:default}
+.upload-result{margin-top:10px}
+.upload-errors{margin:6px 0 0;padding-left:16px;max-height:150px;overflow-y:auto}
+.audit-row.is-failed span:last-child{color:#b4402f}
+
 /* ---------------------------------------------------------------- สมัครสมาชิก / อนุมัติ */
 .login-card .hint{color:#a4b0b2;font-weight:400}
 .login-card select{border:1px solid var(--line);padding:10px 11px;font:400 12px 'IBM Plex Sans Thai';outline:0;background:white}

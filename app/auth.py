@@ -27,13 +27,14 @@ PERMISSIONS = (
     "view:sources",          # แหล่งข้อมูลและประวัติการนำเข้า
     "export:report",         # ออกรายงานผู้บริหาร
     "manage:users",          # จัดการผู้ใช้และสิทธิ์
+    "manage:data",           # นำเข้าไฟล์ข้อมูลและสั่งอัปเดตข้อมูลจาก API
 )
 
 # ผู้ประกอบการเห็นข้อมูลที่ใช้วางแผนธุรกิจของตัวเองได้ แต่ไม่เห็นประชากรแฝงซึ่งเป็นข้อมูลระดับนโยบายเมือง
 # และไม่เห็นประวัติการนำเข้าซึ่งเป็นเรื่องการดูแลระบบ
 ROLE_DEFINITIONS: dict[str, tuple[str, tuple[str, ...]]] = {
     "admin": ("ผู้ดูแลระบบ", PERMISSIONS),
-    "executive": ("ผู้บริหาร", tuple(p for p in PERMISSIONS if p != "manage:users")),
+    "executive": ("ผู้บริหาร", tuple(p for p in PERMISSIONS if not p.startswith("manage:"))),
     "operator": ("ผู้ประกอบการ", (
         "view:overview", "view:spatial", "view:forecast", "view:recommendations", "export:report",
     )),

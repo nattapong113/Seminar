@@ -57,6 +57,7 @@
         <a class="nav-item" data-permission="view:forecast" href="#section-forecast"><span class="nav-icon">⌥</span>พยากรณ์และผลกระทบ</a>
         <a class="nav-item" data-permission="view:demographics" href="#section-context"><span class="nav-icon">▤</span>บริบทเมืองและประชากร</a>
         <a class="nav-item" data-permission="view:sources" href="#section-sources"><span class="nav-icon">⛁</span>แหล่งข้อมูล</a>
+        <a class="nav-item" data-permission="manage:data" href="#section-data"><span class="nav-icon">⇪</span>จัดการข้อมูล</a>
         <a class="nav-item" data-permission="manage:users" href="#section-admin"><span class="nav-icon">⚿</span>จัดการผู้ใช้</a>
       </nav>
       <div class="sidebar-bottom"><div class="live-dot"></div><div><strong>DATA STREAM</strong><span id="stream-status">กำลังเชื่อมต่อ...</span></div></div>
@@ -200,6 +201,31 @@
         <article class="panel" id="section-sources" data-permission="view:sources">
           <div class="panel-heading"><div><p class="eyebrow">PROVENANCE</p><h2>แหล่งข้อมูลที่เชื่อมต่อ</h2></div></div>
           <div id="source-list" class="source-list"><div class="loading">กำลังอ่าน...</div></div>
+        </article>
+      </section>
+
+      <section class="content-grid lower-grid" id="section-data" data-permission="manage:data">
+        <article class="panel">
+          <div class="panel-heading"><div><p class="eyebrow">DATA IMPORT</p><h2>นำเข้าไฟล์ข้อมูล</h2></div></div>
+          <form class="upload-form" id="upload-form">
+            <input type="file" id="upload-file" accept=".csv,.xlsx" required>
+            <button type="submit" id="upload-submit">นำเข้า</button>
+          </form>
+          <div id="upload-result" class="upload-result" hidden></div>
+          <p class="caveat">รองรับไฟล์ CSV ของเมืองพัทยา (นักท่องเที่ยวรายเดือน ประชากรแฝง ปริมาณรถรายแยก) และรายงาน Excel (.xlsx) ขนาดไม่เกิน 10 MB
+            · ไฟล์ที่มีแถวผิดจะไม่ถูกนำเข้าทั้งไฟล์ ข้อมูลเดิมยังอยู่ครบ
+            · ไฟล์ใหม่ที่มีช่วงเวลาซ้ำกับไฟล์เดิมจะแทนที่ข้อมูลช่วงนั้น</p>
+          <div class="panel-heading" style="margin-top:18px"><div><p class="eyebrow">IMPORT HISTORY</p><h2>ประวัติการนำเข้า</h2></div></div>
+          <div id="import-list" class="audit-list"><div class="loading">กำลังอ่าน...</div></div>
+        </article>
+        <article class="panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">AUTO REFRESH</p><h2>อัปเดตข้อมูลอัตโนมัติ</h2></div>
+            <span class="chart-note" id="refresh-mode">—</span>
+          </div>
+          <p class="login-error" id="refresh-error" hidden></p>
+          <div id="refresh-list" class="user-list"><div class="loading">กำลังอ่าน...</div></div>
+          <p class="caveat">ระบบตรวจทุกชั่วโมงระหว่างที่เซิร์ฟเวอร์เปิดอยู่ แล้วดึงเฉพาะชุดข้อมูลที่ถึงรอบ ชุดที่ดึงไม่สำเร็จจะลองใหม่ในรอบถัดไป</p>
         </article>
       </section>
 

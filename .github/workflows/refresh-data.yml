@@ -1,0 +1,27 @@
+# อัปเดตข้อมูลจาก API ภายนอกทุกวัน แม้ไม่มีใครเปิดเซิร์ฟเวอร์ และช่วยไม่ให้ Supabase แบบฟรีถูกพักเพราะไม่มีการใช้งาน
+# ต้องตั้ง secret ชื่อ DATABASE_URL ที่ Settings → Secrets and variables → Actions ก่อน ถ้ายังไม่ตั้ง งานจะข้ามไปเฉย ๆ
+name: Refresh data
+
+on:
+  schedule:
+    - cron: "30 19 * * *"  # 02:30 ตามเวลาไทย
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+        if: env.DATABASE_URL != ''
+      - uses: actions/setup-python@v5
+        if: env.DATABASE_URL != ''
+        with:
+          python-version: "3.12"
+          cache: pip
+      - if: env.DATABASE_URL != ''
+        run: |
+          pip install -r requirements.txt
+          python scripts/refresh_data.py
