@@ -581,6 +581,7 @@ async function loadDashboard() {
     });
   }
 
+  if (can('manage:data')) loadDataPanel();
   if (can('manage:users')) loadAdminPanel();
 }
 
@@ -702,6 +703,106 @@ document.querySelector('#register-form').addEventListener('submit', async (event
 document.querySelector('#logout-btn').addEventListener('click', async () => {
   await postJson('/api/auth/logout', {}).catch(() => {});
   showLogin();
+});
+
+// ---------------------------------------------------------------- จัดการข้อมูล
+
+async function loadDataPanel() {
+  const [imports, refresh] = await Promise.all([api('/api/admin/imports'), api('/api/admin/refresh')]);
+
+  document.querySelector('#import-list').innerHTML = imports.map((row) => {
+    const failed = row.records_failed > 0 || row.first_error;
+    const outcome = failed
+      ? `ไม่สำเร็จ${row.first_error ? ` — ${escapeHtml(row.first_error)}` : ''}`
+      : `${numberFormat.format(row.records_success ?? 0)} ระเบียน`;
+    return `
+    <div class="audit-row${failed ? ' is-failed' : ''}">
+      <span class="audit-time">${escapeHtml(row.imported_at)}</span>
+      <span>${escapeHtml(row.name)} · ${outcome}${row.notes ? ` · ${escapeHtml(row.notes)}` : ''}</span>
+    </div>`;
+  }).join('') || '<div class="loading">ยังไม่มีประวัติ</div>';
+
+  setText('refresh-mode', refresh.enabled ? 'เปิดอยู่' : 'ปิดอยู่ (AUTO_REFRESH=0)');
+  document.querySelector('#refresh-list').innerHTML = refresh.jobs.map((job) => {
+    const tag = job.error
+      ? `<em class="status-tag" title="${escapeHtml(job.error)}">ดึงไม่สำเร็จ</em>`
+      : (job.due ? '<em class="status-tag is-rejected">ถึงรอบ</em>' : '');
+    const last = job.last_run
+      ? `ล่าสุด ${escapeHtml(job.last_run)} · ${numberFormat.format(job.records ?? 0)} ระเบียน`
+      : 'ยังไม่เคยนำเข้า';
+    return `
+    <div class="user-row">
+      <div>
+        <strong>${escapeHtml(job.label)} ${tag}</strong>
+        <span>${last} · ทุก ${job.interval_hours / 24} วัน · ${escapeHtml(job.source_name)}</span>
+      </div>
+      <button class="approve-btn" data-refresh-job="${job.key}">อัปเดตตอนนี้</button>
+    </div>`;
+  }).join('');
+
+  document.querySelectorAll('[data-refresh-job]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const error = document.querySelector('#refresh-error');
+      error.hidden = true;
+      button.disabled = true;
+      button.textContent = 'กำลังดึง...';
+      try {
+        await postJson(`/api/admin/refresh/${button.dataset.refreshJob}`, {});
+        // ตัวเลขบนแดชบอร์ดคำนวณจากข้อมูลชุดนี้ จึงโหลดใหม่ทั้งหน้า (รวมแผงนี้ด้วย)
+        await loadDashboard();
+      } catch (caught) {
+        error.hidden = false;
+        error.textContent = caught.message;
+        await loadDataPanel();
+      }
+    });
+  });
+}
+
+function renderUploadResult(result) {
+  const box = document.querySelector('#upload-result');
+  box.hidden = false;
+  const notes = result.notes.map((note) => `<br>${escapeHtml(note)}`).join('');
+  if (!result.errors.length) {
+    box.className = 'upload-result login-success';
+    box.innerHTML = `นำเข้า ${escapeHtml(result.filename)} สำเร็จ — ${escapeHtml(result.label)} ${
+      numberFormat.format(result.records_success)} ระเบียน${notes}`;
+    return;
+  }
+  box.className = 'upload-result login-error';
+  box.innerHTML = `นำเข้า ${escapeHtml(result.filename)} ไม่สำเร็จ ข้อมูลเดิมไม่ถูกแก้ไข${notes}
+    <ul class="upload-errors">${result.errors.map((error) => (
+      `<li>${error.row_number ? `บรรทัด ${error.row_number}: ` : ''}${escapeHtml(error.error_text)}</li>`
+    )).join('')}</ul>`;
+}
+
+document.querySelector('#upload-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const file = document.querySelector('#upload-file').files[0];
+  if (!file) return;
+  const button = document.querySelector('#upload-submit');
+  button.disabled = true;
+  button.textContent = 'กำลังนำเข้า...';
+  try {
+    // ส่งไฟล์เป็น body ดิบ ชื่อไฟล์ไปทาง query เซิร์ฟเวอร์ไม่ได้รับ multipart
+    const result = await api(`/api/admin/imports?filename=${encodeURIComponent(file.name)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: file,
+    });
+    renderUploadResult(result);
+    event.target.reset();
+    if (result.errors.length) await loadDataPanel();
+    else await loadDashboard();
+  } catch (caught) {
+    const box = document.querySelector('#upload-result');
+    box.hidden = false;
+    box.className = 'upload-result login-error';
+    box.textContent = caught.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = 'นำเข้า';
+  }
 });
 
 // ---------------------------------------------------------------- แผงผู้ดูแลระบบ
