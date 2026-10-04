@@ -153,6 +153,7 @@ a.nav-item{text-decoration:none}
 .upload-result{margin-top:10px}
 .upload-errors{margin:6px 0 0;padding-left:16px;max-height:150px;overflow-y:auto}
 .audit-row.is-failed span:last-child{color:#b4402f}
+#refresh-list .approve-btn{white-space:nowrap;flex-shrink:0}
 
 /* ---------------------------------------------------------------- สมัครสมาชิก / อนุมัติ */
 .login-card .hint{color:#a4b0b2;font-weight:400}
@@ -170,3 +171,9 @@ a.nav-item{text-decoration:none}
 .approve-btn{background:var(--green);border:0;color:white;padding:7px 11px;font:600 11px 'IBM Plex Sans Thai';cursor:pointer}
 .approve-btn:disabled{opacity:.5;cursor:default}
 @media(max-width:700px){.user-row{flex-wrap:wrap}.review-actions{width:100%;justify-content:flex-end}}
+
+/* ---------------------------------------------------------------- สลับหน้า */
+.page-hidden{display:none!important}
+.content-grid.single{grid-template-columns:1fr}
+/* จอแคบซ่อนแถบข้างไม่ได้แล้ว เพราะเมนูเป็นทางเดียวที่ใช้สลับหน้า ย่อเป็นแถบเลื่อนแนวนอนด้านบนแทน */
+@media(max-width:700px){.app-shell{flex-direction:column}.sidebar{display:block;width:auto;padding:6px 8px}.sidebar .brand,.side-label,.sidebar-bottom{display:none}.sidebar nav{display:flex;overflow-x:auto;gap:2px}.nav-item{white-space:nowrap;padding:9px 10px;font-size:12px;gap:6px}.nav-item.active{border-left:0;border-bottom:3px solid var(--coral);padding-left:10px}}

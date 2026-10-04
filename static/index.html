@@ -50,19 +50,18 @@
       <div class="brand"><div class="brand-mark">P</div><div><strong>PATTAYA</strong><span>SMART TOURISM</span></div></div>
       <div class="side-label">WORKSPACE</div>
       <nav>
-        <a class="nav-item active" data-permission="view:overview" href="#section-overview"><span class="nav-icon">◉</span>ภาพรวมเมือง</a>
-        <a class="nav-item" data-permission="view:spatial" href="#section-spatial"><span class="nav-icon">⌁</span>พฤติกรรมเชิงพื้นที่</a>
-        <a class="nav-item" data-permission="view:spatial" href="#section-zones"><span class="nav-icon">▦</span>การกระจายตัวรายย่าน</a>
-        <a class="nav-item" data-permission="view:overview" href="#section-trends"><span class="nav-icon">↗</span>แนวโน้มและพยากรณ์</a>
-        <a class="nav-item" data-permission="view:forecast" href="#section-forecast"><span class="nav-icon">⌥</span>พยากรณ์และผลกระทบ</a>
-        <a class="nav-item" data-permission="view:demographics" href="#section-context"><span class="nav-icon">▤</span>บริบทเมืองและประชากร</a>
-        <a class="nav-item" data-permission="view:sources" href="#section-sources"><span class="nav-icon">⛁</span>แหล่งข้อมูล</a>
-        <a class="nav-item" data-permission="manage:data" href="#section-data"><span class="nav-icon">⇪</span>จัดการข้อมูล</a>
-        <a class="nav-item" data-permission="manage:users" href="#section-admin"><span class="nav-icon">⚿</span>จัดการผู้ใช้</a>
+        <a class="nav-item" data-page="overview" data-permission="view:overview" href="#overview"><span class="nav-icon">◉</span>ภาพรวมเมือง</a>
+        <a class="nav-item" data-page="spatial" data-permission="view:spatial" href="#spatial"><span class="nav-icon">⌁</span>พฤติกรรมเชิงพื้นที่</a>
+        <a class="nav-item" data-page="forecast" data-permission="view:forecast" href="#forecast"><span class="nav-icon">↗</span>พยากรณ์และผลกระทบ</a>
+        <a class="nav-item" data-page="context" data-permission="view:demographics view:spatial" href="#context"><span class="nav-icon">▤</span>ประชากรและธุรกิจ</a>
+        <a class="nav-item" data-page="sources" data-permission="view:sources" href="#sources"><span class="nav-icon">⛁</span>แหล่งข้อมูล</a>
+        <a class="nav-item" data-page="data" data-permission="manage:data" href="#data"><span class="nav-icon">⇪</span>จัดการข้อมูล</a>
+        <a class="nav-item" data-page="admin" data-permission="manage:users" href="#admin"><span class="nav-icon">⚿</span>จัดการผู้ใช้</a>
       </nav>
       <div class="sidebar-bottom"><div class="live-dot"></div><div><strong>DATA STREAM</strong><span id="stream-status">กำลังเชื่อมต่อ...</span></div></div>
     </aside>
 
+    <!-- แต่ละ section มี data-page บอกว่าอยู่หน้าไหน เมนูซ้ายสลับหน้าโดยซ่อน section ของหน้าอื่น (ดู showPage ใน app.js) -->
     <main class="main-content">
       <header class="topbar">
         <div><p class="eyebrow">CITY INTELLIGENCE / PATTAYA</p><h1>ห้องควบคุมการท่องเที่ยว</h1></div>
@@ -82,7 +81,7 @@
         <div class="status-pill"><i></i> <span id="holiday-pill">—</span></div>
       </section>
 
-      <section class="kpi-grid" id="section-overview">
+      <section class="kpi-grid" data-page="overview">
         <article class="kpi-card accent-coral">
           <div class="kpi-head"><span>นักท่องเที่ยวลงเกาะล้าน</span><span class="kpi-symbol">◎</span></div>
           <strong id="kpi-tourists">—</strong>
@@ -105,7 +104,7 @@
         </article>
       </section>
 
-      <section class="content-grid" id="section-spatial" data-permission="view:spatial">
+      <section class="content-grid" data-page="spatial" data-permission="view:spatial">
         <article class="panel map-panel">
           <div class="panel-heading">
             <div><p class="eyebrow">SPATIAL BEHAVIOR</p><h2>ความหนาแน่นเชิงพื้นที่</h2></div>
@@ -127,7 +126,7 @@
         </article>
       </section>
 
-      <section class="content-grid lower-grid" id="section-zones" data-permission="view:spatial">
+      <section class="content-grid lower-grid" data-page="spatial" data-permission="view:spatial">
         <article class="panel">
           <div class="panel-heading">
             <div><p class="eyebrow">MICRO-ZONING</p><h2>การกระจายตัวรายย่าน</h2></div>
@@ -142,7 +141,7 @@
         </article>
       </section>
 
-      <section class="content-grid lower-grid" id="section-trends">
+      <section class="content-grid lower-grid" data-page="overview">
         <article class="panel chart-panel">
           <div class="panel-heading">
             <div><p class="eyebrow">VISITOR FLOW</p><h2>นักท่องเที่ยวรายเดือน เทียบปริมาณรถ</h2></div>
@@ -156,7 +155,7 @@
         </article>
       </section>
 
-      <section class="content-grid lower-grid" id="section-forecast" data-permission="view:forecast">
+      <section class="content-grid lower-grid" data-page="forecast" data-permission="view:forecast">
         <article class="panel chart-panel">
           <div class="panel-heading">
             <div><p class="eyebrow">FORECAST</p><h2>พยากรณ์นักท่องเที่ยวรายเดือน</h2></div>
@@ -178,33 +177,36 @@
         </article>
       </section>
 
-      <section class="content-grid lower-grid">
+      <section class="content-grid single" data-page="overview">
         <article class="panel">
           <div class="panel-heading"><div><p class="eyebrow">UPCOMING</p><h2>วันหยุดและพยากรณ์อากาศ 7 วัน</h2></div></div>
           <div class="forecast-strip" id="forecast-strip"><div class="loading">กำลังอ่านพยากรณ์...</div></div>
           <div class="holiday-list" id="holiday-list"></div>
         </article>
-        <article class="panel">
-          <div class="panel-heading"><div><p class="eyebrow">BUSINESS MIX</p><h2>ประเภทธุรกิจท่องเที่ยว</h2></div></div>
-          <div class="chart-wrap short"><canvas id="poi-chart"></canvas></div>
-        </article>
       </section>
 
-      <section class="content-grid lower-grid" id="section-context" data-permission="view:demographics">
-        <article class="panel">
+      <section class="content-grid lower-grid" data-page="context">
+        <article class="panel" data-permission="view:demographics">
           <div class="panel-heading">
             <div><p class="eyebrow">POPULATION</p><h2>ประชากรแฝงจำแนกตามกลุ่ม</h2></div>
             <label class="select-wrap"><span>กลุ่ม</span><select id="demographic-category"></select></label>
           </div>
           <div class="chart-wrap short"><canvas id="demographic-chart"></canvas></div>
         </article>
-        <article class="panel" id="section-sources" data-permission="view:sources">
+        <article class="panel" data-permission="view:spatial">
+          <div class="panel-heading"><div><p class="eyebrow">BUSINESS MIX</p><h2>ประเภทธุรกิจท่องเที่ยว</h2></div></div>
+          <div class="chart-wrap short"><canvas id="poi-chart"></canvas></div>
+        </article>
+      </section>
+
+      <section class="content-grid single" data-page="sources" data-permission="view:sources">
+        <article class="panel">
           <div class="panel-heading"><div><p class="eyebrow">PROVENANCE</p><h2>แหล่งข้อมูลที่เชื่อมต่อ</h2></div></div>
           <div id="source-list" class="source-list"><div class="loading">กำลังอ่าน...</div></div>
         </article>
       </section>
 
-      <section class="content-grid lower-grid" id="section-data" data-permission="manage:data">
+      <section class="content-grid lower-grid" data-page="data" data-permission="manage:data">
         <article class="panel">
           <div class="panel-heading"><div><p class="eyebrow">DATA IMPORT</p><h2>นำเข้าไฟล์ข้อมูล</h2></div></div>
           <form class="upload-form" id="upload-form">
@@ -229,7 +231,7 @@
         </article>
       </section>
 
-      <section class="content-grid lower-grid" id="section-admin" data-permission="manage:users">
+      <section class="content-grid lower-grid" data-page="admin" data-permission="manage:users">
         <article class="panel">
           <div class="panel-heading">
             <div><p class="eyebrow">USER MANAGEMENT</p><h2>ผู้ใช้งานระบบ</h2></div>

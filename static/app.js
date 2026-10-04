@@ -19,7 +19,7 @@ const postJson = (path, payload) => api(path, {
 const numberFormat = new Intl.NumberFormat('th-TH');
 const compactFormat = new Intl.NumberFormat('th-TH', { notation: 'compact', maximumFractionDigits: 2 });
 const charts = {};
-const state = { demographics: [], user: null, permissions: [] };
+const state = { demographics: [], user: null, permissions: [], page: null, mapData: null };
 
 const can = (permission) => state.permissions.includes(permission);
 
@@ -126,9 +126,20 @@ function renderMap(zones, points) {
   applyLayerVisibility();
 }
 
+// แผนที่วาดได้เฉพาะตอนหน้าเชิงพื้นที่แสดงอยู่ ถ้าหน้าถูกซ่อน แผนที่จะกว้าง 0 แล้ว leaflet.heat พังตอนอ่าน canvas
+// ข้อมูลที่โหลดมาระหว่างอยู่หน้าอื่นจึงพักไว้ใน state.mapData แล้ววาดตอนเปิดหน้านี้
+function drawMap() {
+  if (state.page !== 'spatial') return;
+  // ขนาดที่ Leaflet จำไว้ตอนถูกซ่อนเป็น 0 ต้องสั่งวัดใหม่ "ก่อน" วาดเลเยอร์
+  window.map.invalidateSize();
+  if (state.mapData) renderMap(...state.mapData);
+  else applyLayerVisibility();
+  state.mapData = null;
+}
+
 function applyLayerVisibility() {
   const showZone = document.querySelector('#layer-zone').checked;
-  const showPoi = document.querySelector('#layer-poi').checked;
+  const showPoi = document.querySelector('#layer-poi').checked && state.page === 'spatial';
   const showTraffic = document.querySelector('#layer-traffic').checked;
   if (window.zoneLayer) showZone ? window.zoneLayer.addTo(window.map) : window.map.removeLayer(window.zoneLayer);
   if (window.poiHeat) showPoi ? window.poiHeat.addTo(window.map) : window.map.removeLayer(window.poiHeat);
@@ -560,7 +571,7 @@ async function loadDashboard() {
 
   if (summary) renderSummary(summary);
   if (trends) renderRanges(trends, traffic || []);
-  if (zones && points) { renderMap(zones, points); renderRanking(zones); }
+  if (zones && points) { state.mapData = [zones, points]; drawMap(); renderRanking(zones); }
   if (micro) renderMicroZones(micro);
   if (trends) renderTrendChart(trends, traffic || []);
   if (recommendations) renderRecommendations(recommendations);
@@ -585,12 +596,36 @@ async function loadDashboard() {
   if (can('manage:users')) loadAdminPanel();
 }
 
+// ---------------------------------------------------------------- สลับหน้า
+
+function showPage(page) {
+  // หน้าที่ขอมาอาจไม่มีอยู่หรือบทบาทนี้ไม่มีสิทธิ์ (เช่น เปิดลิงก์ที่คนอื่นส่งมา) ให้ไปหน้าแรกที่เข้าได้แทน
+  const links = [...document.querySelectorAll('.nav-item[data-page]')].filter((link) => !link.hidden);
+  const target = links.find((link) => link.dataset.page === page) || links[0];
+  if (!target) return;
+  state.page = target.dataset.page;
+  document.querySelectorAll('.main-content [data-page]').forEach((section) => {
+    section.classList.toggle('page-hidden', section.dataset.page !== state.page);
+  });
+  document.querySelectorAll('.nav-item').forEach((link) => link.classList.toggle('active', link === target));
+  if (state.page === 'spatial') drawMap();
+  else if (window.poiHeat) window.map.removeLayer(window.poiHeat);
+}
+
+// เมนูเป็นลิงก์ #ชื่อหน้า จึงรีเฟรชแล้วอยู่หน้าเดิม และปุ่มย้อนกลับของเบราว์เซอร์ใช้ได้
+window.addEventListener('hashchange', () => {
+  if (!state.user) return;
+  showPage(location.hash.slice(1));
+  window.scrollTo(0, 0);
+});
+
 // ---------------------------------------------------------------- ผู้ใช้และสิทธิ์
 
 function applyPermissions() {
   // ซ่อนทุกส่วนที่บทบาทนี้ไม่มีสิทธิ์ ฝั่งเซิร์ฟเวอร์ปฏิเสธซ้ำอีกชั้นอยู่แล้ว การซ่อนนี้เป็นเรื่องความสะอาดของหน้าจอ
+  // ระบุได้หลายสิทธิ์คั่นด้วยเว้นวรรค มีสิทธิ์ใดสิทธิ์หนึ่งก็เห็น (ใช้กับเมนูของหน้าที่มีเนื้อหาหลายกลุ่มสิทธิ์)
   document.querySelectorAll('[data-permission]').forEach((element) => {
-    element.hidden = !can(element.dataset.permission);
+    element.hidden = !element.dataset.permission.split(' ').some(can);
   });
   setText('user-name', state.user.full_name || state.user.username);
   setText('user-role', state.user.role_labels.join(' · ') || 'ไม่มีบทบาท');
@@ -615,9 +650,7 @@ async function startSession(user) {
   document.querySelector('#login-screen').hidden = true;
   document.querySelector('#app-shell').hidden = false;
   applyPermissions();
-  // แผนที่ถูกสร้างตอน #app-shell ยังซ่อนอยู่ ขนาดที่ Leaflet จำไว้จึงเป็น 0
-  // ต้องสั่งวัดใหม่ "ก่อน" วาดเลเยอร์ ไม่งั้น leaflet.heat จะพังตอนอ่าน canvas ที่กว้าง 0
-  if (window.map) window.map.invalidateSize();
+  showPage(location.hash.slice(1));
   await loadDashboard();
 }
 
@@ -941,13 +974,6 @@ window.addEventListener('beforeprint', () => {
 });
 window.addEventListener('afterprint', applyLayerVisibility);
 
-document.querySelectorAll('.nav-item').forEach((item) => {
-  item.addEventListener('click', () => {
-    document.querySelectorAll('.nav-item').forEach((other) => other.classList.remove('active'));
-    item.classList.add('active');
-  });
-});
-
 // ---------------------------------------------------------------- รายงานผู้บริหาร
 
 // กันไม่ให้ข้อความจากฐานข้อมูล (ชื่อแยก ชื่อวันหยุด คำแนะนำ) ที่มีอักขระ HTML ทำให้รายงานเพี้ยน
@@ -1104,9 +1130,18 @@ document.querySelector('#export-btn').addEventListener('click', async () => {
       api('/api/impact'),
       api('/api/recommendations'),
     ]);
+    // กราฟในหน้าที่ซ่อนอยู่มีขนาด 0 แปลงเป็นรูปลงรายงานไม่ได้ จึงสลับไปหน้าพยากรณ์ให้กราฟวาดตามขนาดจริงก่อน
+    // ทั้งหมดเกิดในจังหวะเดียวก่อนเบราว์เซอร์วาดจอ ผู้ใช้จึงไม่เห็นหน้ากระพริบ
+    const currentPage = state.page;
+    if (charts.forecast && currentPage !== 'forecast') {
+      showPage('forecast');
+      charts.forecast.resize();
+      charts.forecast.update('none');
+    }
     document.querySelector('#print-report').innerHTML = buildReport({
       summary, sources, forecast, impact, recommendations, micro: state.microZones,
     });
+    showPage(currentPage);
     window.print();
   } catch (error) {
     console.error('สร้างรายงานไม่สำเร็จ:', error);
