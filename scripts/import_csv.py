@@ -5,6 +5,7 @@ import csv
 import io
 import sys
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -58,6 +59,9 @@ def buddhist_year(value: str | None) -> int:
     year = integer(value)
     if not 2400 <= year <= 2700:
         raise ValueError(f"ปีต้องเป็น พ.ศ. แต่ได้ {value!r}")
+    # ไฟล์รายปีบางไฟล์ของต้นทางมีปีไล่ต่อไปถึงอนาคต (เช่น 2569-2571 ในไฟล์ของปี 2567) จากการลากสูตรในตาราง
+    if year > date.today().year + 543:
+        raise ValueError(f"ปี {year} ยังมาไม่ถึง")
     return year
 
 
@@ -68,8 +72,31 @@ def month_number(value: str | None) -> int:
     return month
 
 
+def decimal(value: str | None) -> float:
+    try:
+        return float((value or "").replace(",", "").strip())
+    except ValueError:
+        raise ValueError(f"ต้องเป็นตัวเลข แต่ได้ {value!r}") from None
+
+
 def clean(value: str | None) -> str:
     return (value or "").strip()
+
+
+MONTH_IDS = {name: number for number, name in enumerate((
+    "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+    "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
+), start=1)}
+
+
+def month_of(row: dict[str, str]) -> int:
+    """บางไฟล์ของเมืองพัทยามีแต่ชื่อเดือน ไม่มี month_id"""
+    if clean(row.get("month_id")):
+        return month_number(row.get("month_id"))
+    name = clean(row.get("month_name"))
+    if name not in MONTH_IDS:
+        raise ValueError(f"ไม่รู้จักชื่อเดือน {name!r}")
+    return MONTH_IDS[name]
 
 
 # ---------------------------------------------------------------- แปลงแถวของแต่ละรูปแบบไฟล์
@@ -139,6 +166,59 @@ def zone_traffic_rows(source_file: str, row: dict[str, str]) -> list[tuple]:
     )]
 
 
+def boat_rows(source_file: str, row: dict[str, str]) -> list[tuple]:
+    year_be = buddhist_year(row.get("calendar_year"))
+    return [(
+        source_file,
+        year_be,
+        year_be - 543,
+        month_of(row),
+        clean(row.get("month_name")) or None,
+        clean(row.get("boat_type_id")),
+        clean(row.get("boat_type_name")),
+        clean(row.get("route_id")),
+        clean(row.get("route_name")),
+        integer(row.get("number_of_trips")),
+        integer(row.get("number_of_passengers")),
+    )]
+
+
+def air_quality_rows(source_file: str, row: dict[str, str]) -> list[tuple]:
+    year_be = buddhist_year(row.get("calendar_year"))
+    return [(
+        source_file,
+        year_be,
+        year_be - 543,
+        month_of(row),
+        clean(row.get("month_name")) or None,
+        decimal(row.get("pm25_avg")),
+        decimal(row.get("pm25_min")) if clean(row.get("pm25_min")) else None,
+        decimal(row.get("pm25_max")) if clean(row.get("pm25_max")) else None,
+        integer(row.get("exceed_days")) if clean(row.get("exceed_days")) else None,
+    )]
+
+
+# ชุดขยะทั้งเมือง (150) ใช้หัวคอลัมน์เดียวกับชุดขยะเกาะล้าน (hom8) แยกได้จากประเภทขยะที่มีเฉพาะในชุดทั้งเมือง
+# ถ้าปล่อยเข้ามา ยอดขยะของเกาะจะกลายเป็นหลักหมื่นตันต่อเดือน
+CITY_ONLY_WASTE_TYPES = {"ขยะติดเชื้อ", "ขยะอันตราย"}
+
+
+def island_waste_rows(source_file: str, row: dict[str, str]) -> list[tuple]:
+    year_be = buddhist_year(row.get("calendar_year"))
+    waste_type = clean(row.get("waste_type"))
+    if waste_type in CITY_ONLY_WASTE_TYPES:
+        raise ValueError(f"พบประเภท {waste_type!r} ซึ่งเป็นของชุดขยะทั้งเมือง ไม่ใช่ชุดขยะเกาะล้าน")
+    return [(
+        source_file,
+        year_be,
+        year_be - 543,
+        month_of(row),
+        clean(row.get("month_name")) or None,
+        waste_type,
+        decimal(row.get("waste_amount_ton")),
+    )]
+
+
 @dataclass(frozen=True)
 class Dataset:
     label: str
@@ -168,6 +248,24 @@ ZONE_TRAFFIC = Dataset(
 )
 
 
+BOAT_PASSENGERS = Dataset(
+    "ผู้โดยสารเรือเกาะล้าน", "boat_passengers_monthly",
+    ("source_file", "calendar_year_be", "calendar_year", "month_id", "month_name", "boat_type_id", "boat_type_name",
+     "route_id", "route_name", "number_of_trips", "number_of_passengers"),
+    ("calendar_year_be", "month_id", "boat_type_id", "route_id"), boat_rows,
+)
+AIR_QUALITY = Dataset(
+    "ฝุ่น PM2.5 รายเดือน", "air_quality_monthly",
+    ("source_file", "calendar_year_be", "calendar_year", "month_id", "month_name", "pm25_avg", "pm25_min", "pm25_max", "exceed_days"),
+    ("calendar_year_be", "month_id"), air_quality_rows,
+)
+ISLAND_WASTE = Dataset(
+    "ขยะเกาะล้าน", "island_waste_monthly",
+    ("source_file", "calendar_year_be", "calendar_year", "month_id", "month_name", "waste_type", "waste_amount_ton"),
+    ("calendar_year_be", "month_id", "waste_type"), island_waste_rows,
+)
+
+
 def detect_dataset(headers: set[str]) -> Optional[Dataset]:
     """เลือกรูปแบบไฟล์จากหัวคอลัมน์ คืน None ถ้าไม่รู้จัก"""
     if {"calendar_year", "month_id", "number_of_tourists"}.issubset(headers):
@@ -178,6 +276,12 @@ def detect_dataset(headers: set[str]) -> Optional[Dataset]:
         return ZONE_TRAFFIC
     if {"category_type", "category_label"}.issubset(headers) and any(h.startswith("pop_") for h in headers):
         return DEMOGRAPHICS_WIDE
+    if {"calendar_year", "boat_type_id", "route_id", "number_of_passengers"}.issubset(headers):
+        return BOAT_PASSENGERS
+    if {"calendar_year", "pm25_avg"}.issubset(headers):
+        return AIR_QUALITY
+    if {"calendar_year", "month_name", "waste_type", "waste_amount_ton"}.issubset(headers):
+        return ISLAND_WASTE
     return None
 
 

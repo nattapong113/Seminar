@@ -1007,11 +1007,16 @@ FORECAST_CAVEATS = [
     "รูปแบบฤดูกาลยังไม่คงที่เพราะเพิ่งฟื้นจากโควิด ปี 2022 เดือนพีคสูงกว่าค่าเฉลี่ยทั้งปี 69% แต่ปี 2025 เหลือ 18%",
     "ช่วงประมาณกว้าง ใช้วางแผนกำลังคนแบบคร่าว ๆ ได้ แต่ไม่ควรใช้เป็นตัวเลขผูกพัน",
 ]
+AIR_QUALITY_SOURCE = "Open Data เมืองพัทยา ชุดผลการตรวจวัดคุณภาพอากาศ (149)"
+BOAT_SOURCE = "Open Data เมืองพัทยา ชุดข้อมูลสถิติการใช้บริการเรือโดยสารและเรือสปีดโบ๊ท (170)"
+ISLAND_WASTE_SOURCE = "Open Data เมืองพัทยา ชุดข้อมูลการบริหารจัดการขยะเกาะล้าน"
+
 IMPACT_CAVEATS = [
     "เป็นความสัมพันธ์ ไม่ใช่การพิสูจน์เหตุและผล",
     "ข้อมูลนักท่องเที่ยวเป็นรายเดือน จึงดูผลของฝนรายวันหรือวันหยุดแต่ละวันไม่ได้",
     "นับเฉพาะวันหยุดราชการ วันสำคัญที่ราชการไม่ได้หยุด (ตรุษจีน คริสต์มาส) ไม่ถูกนับเป็นวันหยุด",
     "ฝนเป็นข้อมูลวิเคราะห์ย้อนหลัง (ERA5) ของจุดเดียวกลางเมืองพัทยา ไม่ใช่ค่าเฉลี่ยทั้งเมือง",
+    "PM2.5 มีข้อมูลแค่สองปี จึงหักระดับของทั้งปีออกด้วยเพื่อไม่ให้ความต่างระหว่างปีถูกนับเป็นผลของฝุ่น ผลที่ได้ยังใช้ตัดสินใจไม่ได้จนกว่าจะมีข้อมูลหลายปีกว่านี้",
 ]
 
 
@@ -1089,15 +1094,28 @@ def impact_analysis() -> dict:
         [month for month, _ in holiday_months],
     ) if len(holiday_months) >= analytics.MONTHS_IN_YEAR else None
 
+    pm25_by_month = {row["month"]: row["pm25_avg"] for row in query(
+        """SELECT to_char(make_date(calendar_year, month_id, 1), 'YYYY-MM') AS month, AVG(pm25_avg) AS pm25_avg
+           FROM air_quality_monthly GROUP BY 1"""
+    )}
+    pm25_months = [(month, index) for month, index in zip(labels, visitor_index) if month in pm25_by_month]
+    # ต้องมีอย่างน้อยสองปี ถ้ามีปีเดียว ค่าปกติของเดือนจะเท่ากับค่าของเดือนนั้นเอง ส่วนต่างเป็น 0 ทุกเดือน 
+    pm25 = analytics.pm25_impact(
+        [index for _, index in pm25_months],
+        [pm25_by_month[month] for month, _ in pm25_months],
+        [month for month, _ in pm25_months],
+    ) if len(pm25_months) >= 2 * analytics.MONTHS_IN_YEAR else None
+
     return {
         "method": (
             "ตัดฤดูกาล (ratio-to-moving-average) และแนวโน้มเชิงเส้นออกจากจำนวนนักท่องเที่ยวก่อน "
-            "เหลือเป็นดัชนี 1.0 = เท่าที่ควรจะเป็น แล้ววัดความสัมพันธ์กับฝนที่มากกว่าปกติของเดือนนั้น และจำนวนวันหยุด"
+            "เหลือเป็นดัชนี 1.0 = เท่าที่ควรจะเป็น แล้ววัดความสัมพันธ์กับฝนและ PM2.5 ที่มากกว่าปกติของเดือนนั้น และจำนวนวันหยุด"
         ),
         "rain": rain,
         "holidays": holidays,
+        "pm25": pm25,
         "caveats": IMPACT_CAVEATS,
-        "sources": [FORECAST_SOURCE, "Open-Meteo Archive (ERA5)", HOLIDAY_SOURCE],
+        "sources": [FORECAST_SOURCE, "Open-Meteo Archive (ERA5)", HOLIDAY_SOURCE, AIR_QUALITY_SOURCE],
     }
 
 
@@ -1287,6 +1305,99 @@ def recommendations(_: dict = Depends(auth.require("view:recommendations"))) -> 
             "source": "OpenStreetMap (Overpass API)",
         })
     return results
+
+
+# ---------------------------------------------------------------- เกาะล้านและสิ่งแวดล้อม
+
+MONTH_LABEL = "to_char(make_date(calendar_year, month_id, 1), 'YYYY-MM')"
+
+
+def tourists_by_month() -> dict[str, float]:
+    return dict(zip(*monthly_tourism_series()))
+
+
+@app.get("/api/island/boats")
+def island_boats(_: dict = Depends(auth.require("view:overview"))) -> dict:
+    """ผู้โดยสารเรือไปเกาะล้านรายเดือน แยกประเภทเรือ เทียบกับจำนวนนักท่องเที่ยว และสัดส่วนรายเส้นทาง"""
+    tourists = tourists_by_month()
+    months: dict[str, dict] = {}
+    for row in query(
+        f"""SELECT {MONTH_LABEL} AS month, boat_type_name,
+                   SUM(number_of_passengers) AS passengers, SUM(number_of_trips) AS trips
+            FROM boat_passengers_monthly GROUP BY 1, 2 ORDER BY 1, 2"""
+    ):
+        month = months.setdefault(row["month"], {
+            "month": row["month"], "passengers": 0, "trips": 0, "by_type": {}, "tourists": tourists.get(row["month"]),
+        })
+        month["passengers"] += row["passengers"]
+        month["trips"] += row["trips"]
+        month["by_type"][row["boat_type_name"]] = row["passengers"]
+
+    routes = query(
+        """SELECT route_name, boat_type_name, SUM(number_of_passengers) AS passengers, SUM(number_of_trips) AS trips
+           FROM boat_passengers_monthly GROUP BY 1, 2 ORDER BY passengers DESC"""
+    )
+    total = sum(route["passengers"] for route in routes) or 1
+    for route in routes:
+        route["share_percent"] = round(route["passengers"] / total * 100, 1)
+        route["passengers_per_trip"] = round(route["passengers"] / route["trips"]) if route["trips"] else None
+    return {
+        "months": list(months.values()),
+        "routes": routes,
+        "caveats": [
+            "นับผู้โดยสารทุกเที่ยว ทั้งขาไปและขากลับ ยอดจึงสูงกว่าจำนวนนักท่องเที่ยวและเทียบกันตรง ๆ ไม่ได้ ให้ดูทิศทางการขึ้นลง",
+        ],
+        "source": BOAT_SOURCE,
+    }
+
+
+@app.get("/api/island/waste")
+def island_waste(_: dict = Depends(auth.require("view:overview"))) -> dict:
+    """ขยะเกาะล้านรายเดือน เทียบกับจำนวนนักท่องเที่ยว"""
+    tourists = tourists_by_month()
+    months: dict[str, dict] = {}
+    for row in query(
+        f"""SELECT {MONTH_LABEL} AS month, waste_type, SUM(waste_amount_ton) AS tons
+            FROM island_waste_monthly GROUP BY 1, 2 ORDER BY 1, 2"""
+    ):
+        months.setdefault(row["month"], {"month": row["month"], "by_type": {}})["by_type"][row["waste_type"]] = round(row["tons"], 2)
+    result = []
+    for month in months.values():
+        # "ขยะทั่วไป" คือปริมาณที่เก็บได้ ส่วน "ลงบ่อ" คือส่วนที่นำไปฝังกลบ เป็นขยะก้อนเดียวกัน ห้ามบวกกัน
+        collected = month["by_type"].get("ขยะทั่วไป")
+        visitors = tourists.get(month["month"])
+        result.append({
+            **month,
+            "collected_ton": collected,
+            "tourists": visitors,
+            "kg_per_tourist": round(collected * 1000 / visitors, 2) if collected is not None and visitors else None,
+        })
+    paired = [row for row in result if row["collected_ton"] is not None and row["tourists"]]
+    r = analytics.correlation([row["tourists"] for row in paired], [row["collected_ton"] for row in paired]) if len(paired) >= 4 else None
+    interval = analytics.correlation_interval(r, len(paired)) if r is not None else None
+    return {
+        "months": result,
+        "correlation": {
+            "r": round(r, 3),
+            "ci_95": [round(interval[0], 3), round(interval[1], 3)] if interval else None,
+            "months_used": len(paired),
+        } if r is not None else None,
+        "caveats": [
+            "ขยะบนเกาะมาจากทั้งผู้อยู่อาศัยและนักท่องเที่ยว กิโลกรัมต่อนักท่องเที่ยวจึงเป็นตัวชี้วัดภาระของเกาะ ไม่ใช่ขยะที่นักท่องเที่ยวหนึ่งคนทิ้ง",
+        ],
+        "source": ISLAND_WASTE_SOURCE,
+    }
+
+
+@app.get("/api/air-quality")
+def air_quality(_: dict = Depends(auth.require("view:overview"))) -> dict:
+    return {
+        "months": query(
+            f"""SELECT {MONTH_LABEL} AS month, pm25_avg, pm25_min, pm25_max, exceed_days
+                FROM air_quality_monthly ORDER BY calendar_year, month_id"""
+        ),
+        "source": AIR_QUALITY_SOURCE,
+    }
 
 
 # ---------------------------------------------------------------- รายงาน Excel
