@@ -53,6 +53,7 @@
         <a class="nav-item" data-page="overview" data-permission="view:overview" href="#overview"><span class="nav-icon">◉</span>ภาพรวมเมือง</a>
         <a class="nav-item" data-page="spatial" data-permission="view:spatial" href="#spatial"><span class="nav-icon">⌁</span>พฤติกรรมเชิงพื้นที่</a>
         <a class="nav-item" data-page="forecast" data-permission="view:forecast" href="#forecast"><span class="nav-icon">↗</span>พยากรณ์และผลกระทบ</a>
+        <a class="nav-item" data-page="island" data-permission="view:overview" href="#island"><span class="nav-icon">≋</span>เกาะล้านและสิ่งแวดล้อม</a>
         <a class="nav-item" data-page="context" data-permission="view:demographics view:spatial" href="#context"><span class="nav-icon">▤</span>ประชากรและธุรกิจ</a>
         <a class="nav-item" data-page="sources" data-permission="view:sources" href="#sources"><span class="nav-icon">⛁</span>แหล่งข้อมูล</a>
         <a class="nav-item" data-page="data" data-permission="manage:data" href="#data"><span class="nav-icon">⇪</span>จัดการข้อมูล</a>
@@ -177,6 +178,40 @@
         </article>
       </section>
 
+      <section class="content-grid lower-grid" data-page="island">
+        <article class="panel chart-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">FERRY &amp; SPEEDBOAT</p><h2>ผู้โดยสารเรือไปเกาะล้าน เทียบนักท่องเที่ยว</h2></div>
+            <span class="chart-note">คน/เดือน</span>
+          </div>
+          <div class="chart-wrap"><canvas id="boat-chart"></canvas></div>
+          <p class="caveat" id="boat-caveats"></p>
+        </article>
+        <article class="panel ranking-panel">
+          <div class="panel-heading"><div><p class="eyebrow">ROUTES</p><h2>ผู้โดยสารรายเส้นทาง</h2></div></div>
+          <div id="route-list" class="ranking-list"><div class="loading">กำลังอ่านข้อมูล...</div></div>
+        </article>
+      </section>
+
+      <section class="content-grid even-grid" data-page="island">
+        <article class="panel chart-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">ISLAND WASTE</p><h2>ขยะเกาะล้าน เทียบนักท่องเที่ยว</h2></div>
+            <span class="chart-note" id="waste-note">—</span>
+          </div>
+          <div class="chart-wrap"><canvas id="waste-chart"></canvas></div>
+          <p class="caveat" id="waste-caveats"></p>
+        </article>
+        <article class="panel chart-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">AIR QUALITY</p><h2>ฝุ่น PM2.5 รายเดือน</h2></div>
+            <span class="chart-note" id="air-note">—</span>
+          </div>
+          <div class="chart-wrap"><canvas id="air-chart"></canvas></div>
+          <p class="caveat">ค่าเฉลี่ยรายเดือนจากจุดตรวจวัดในเขตเมืองพัทยา เส้นคือจำนวนวันในเดือนที่ค่าเกินมาตรฐาน ตามที่ต้นทางรายงาน</p>
+        </article>
+      </section>
+
       <section class="content-grid single" data-page="overview">
         <article class="panel">
           <div class="panel-heading"><div><p class="eyebrow">UPCOMING</p><h2>วันหยุดและพยากรณ์อากาศ 7 วัน</h2></div></div>
@@ -214,7 +249,7 @@
             <button type="submit" id="upload-submit">นำเข้า</button>
           </form>
           <div id="upload-result" class="upload-result" hidden></div>
-          <p class="caveat">รองรับไฟล์ CSV ของเมืองพัทยา (นักท่องเที่ยวรายเดือน ประชากรแฝง ปริมาณรถรายแยก) และรายงาน Excel (.xlsx) ขนาดไม่เกิน 10 MB
+          <p class="caveat">รองรับไฟล์ CSV ของเมืองพัทยา (นักท่องเที่ยวรายเดือน ประชากรแฝง ปริมาณรถรายแยก ผู้โดยสารเรือ PM2.5 ขยะเกาะล้าน) และรายงาน Excel (.xlsx) ขนาดไม่เกิน 10 MB
             · ไฟล์ที่มีแถวผิดจะไม่ถูกนำเข้าทั้งไฟล์ ข้อมูลเดิมยังอยู่ครบ
             · ไฟล์ใหม่ที่มีช่วงเวลาซ้ำกับไฟล์เดิมจะแทนที่ข้อมูลช่วงนั้น</p>
           <div class="panel-heading" style="margin-top:18px"><div><p class="eyebrow">IMPORT HISTORY</p><h2>ประวัติการนำเข้า</h2></div></div>

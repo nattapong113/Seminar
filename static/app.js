@@ -497,6 +497,15 @@ function renderImpact(data) {
         <em>${data.holidays.significant ? 'ความสัมพันธ์ชัดเจน' : 'ยังสรุปไม่ได้'} · r = ${data.holidays.correlation} · ${data.holidays.months_used} เดือน</em>
       </div>`);
   }
+  if (data.pm25) {
+    // ช่วงความเชื่อมั่นคิดจากจุดที่เป็นอิสระต่อกันจริง ซึ่งน้อยกว่าจำนวนเดือน (ดู pm25_impact ใน analytics.py)
+    tiles.push(`
+      <div class="impact-tile ${data.pm25.significant ? '' : 'is-weak'}">
+        <span>PM2.5 สูงกว่าปกติ 10 มคก./ลบ.ม.</span>
+        <b>${data.pm25.effect_percent > 0 ? '+' : ''}${data.pm25.effect_percent}%</b>
+        <em>${data.pm25.significant ? 'ความสัมพันธ์ชัดเจน' : 'ยังสรุปไม่ได้'} · r = ${data.pm25.correlation} · ${data.pm25.months_used} เดือน (ข้อมูลสองปี)</em>
+      </div>`);
+  }
   document.querySelector('#impact-tiles').innerHTML = tiles.join('') || '<div class="loading">ยังวิเคราะห์ไม่ได้</div>';
 
   if (!data.rain) return;
@@ -546,13 +555,105 @@ function renderImpact(data) {
   document.querySelector('#impact-caveats').textContent = data.caveats.map((text) => `• ${text}`).join('  ');
 }
 
+// ---------------------------------------------------------------- เกาะล้านและสิ่งแวดล้อม
+
+// กราฟรายเดือนแบบแท่ง + เส้นบนแกนขวา ใช้รูปแบบเดียวกันทั้งสามกราฟของหน้านี้
+function monthlyComboChart(key, canvasId, months, datasets, rightAxisFormat) {
+  charts[key]?.destroy();
+  const canvas = document.querySelector(canvasId);
+  if (!months.length) {
+    // ยังไม่ได้นำเข้าชุดข้อมูลนี้ บอกตรง ๆ แทนการแสดงกราฟเปล่า
+    canvas.parentElement.dataset.empty = 'ยังไม่มีข้อมูล นำเข้าไฟล์ได้ที่เมนูจัดการข้อมูล';
+    charts[key] = null;
+    return;
+  }
+  delete canvas.parentElement.dataset.empty;
+  const tick = (color) => ({ color, font: { family: 'DM Mono', size: 9 } });
+  charts[key] = new Chart(canvas, {
+    data: { labels: months.map(monthLabel), datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { font: { family: 'IBM Plex Sans Thai', size: 10 }, boxWidth: 10 } },
+        tooltip: { callbacks: { label: (context) => (
+          context.parsed.y === null ? null : `${context.dataset.label}: ${numberFormat.format(context.parsed.y)}`
+        ) } },
+      },
+      scales: {
+        x: { stacked: true, grid: { display: false }, ticks: { ...tick('#9aa5a7'), maxRotation: 0, autoSkipPadding: 12 } },
+        y: { stacked: true, position: 'left', beginAtZero: true, grid: { color: '#edf1ef' },
+             ticks: { ...tick('#4b90a9'), callback: (value) => compactFormat.format(value) } },
+        y1: { position: 'right', beginAtZero: true, grid: { display: false },
+              ticks: { ...tick(ACTUAL_COLOR), callback: rightAxisFormat || ((value) => compactFormat.format(value)) } },
+      },
+    },
+  });
+}
+
+const lineOnRightAxis = (label, data) => ({
+  type: 'line', label, yAxisID: 'y1', data, borderColor: ACTUAL_COLOR, backgroundColor: ACTUAL_COLOR,
+  borderWidth: 2, pointRadius: 2, tension: 0.35, spanGaps: true,
+});
+
+function renderBoats(data) {
+  const types = [...new Set(data.months.flatMap((row) => Object.keys(row.by_type)))];
+  const colors = ['#4b90a9', '#e5b84d', '#5da17d', '#9b7fb5'];
+  monthlyComboChart('boat', '#boat-chart', data.months.map((row) => row.month), [
+    ...types.map((type, index) => ({
+      type: 'bar', label: `${type} (ผู้โดยสาร)`, yAxisID: 'y', stack: 'boats',
+      data: data.months.map((row) => row.by_type[type] ?? null),
+      backgroundColor: `${colors[index % colors.length]}aa`, borderColor: colors[index % colors.length], borderWidth: 1,
+    })),
+    lineOnRightAxis('นักท่องเที่ยวลงเกาะล้าน (คน)', data.months.map((row) => row.tourists)),
+  ]);
+  document.querySelector('#boat-caveats').textContent = data.caveats.map((text) => `• ${text}`).join('  ');
+
+  const top = data.routes[0]?.passengers || 1;
+  document.querySelector('#route-list').innerHTML = data.routes.map((route, index) => `
+    <div class="ranking-item">
+      <span class="rank">${String(index + 1).padStart(2, '0')}</span>
+      <div>
+        <div class="rank-name">${escapeHtml(route.route_name)} <small>${escapeHtml(route.boat_type_name)} · ${route.share_percent}%${
+          route.passengers_per_trip ? ` · ${numberFormat.format(route.passengers_per_trip)} คน/เที่ยว` : ''}</small></div>
+        <div class="rank-bar"><i style="width:${Math.max(4, route.passengers / top * 100)}%"></i></div>
+      </div>
+      <div class="rank-value">${compactFormat.format(route.passengers)}<span class="rank-unit">คน สะสม</span></div>
+    </div>`).join('') || '<div class="loading">ยังไม่มีข้อมูล</div>';
+}
+
+function renderIslandWaste(data) {
+  monthlyComboChart('waste', '#waste-chart', data.months.map((row) => row.month), [
+    { type: 'bar', label: 'ขยะที่เก็บได้ (ตัน)', yAxisID: 'y', data: data.months.map((row) => row.collected_ton),
+      backgroundColor: '#5da17daa', borderColor: '#5da17d', borderWidth: 1 },
+    lineOnRightAxis('นักท่องเที่ยวลงเกาะล้าน (คน)', data.months.map((row) => row.tourists)),
+  ]);
+  const stat = data.correlation;
+  setText('waste-note', stat ? `r = ${stat.r}${stat.ci_95 ? ` [${stat.ci_95.join(', ')}]` : ''} · ${stat.months_used} เดือน` : '—');
+  const rates = data.months.map((row) => row.kg_per_tourist).filter((value) => value !== null);
+  const average = rates.length ? (rates.reduce((sum, value) => sum + value, 0) / rates.length).toFixed(2) : null;
+  document.querySelector('#waste-caveats').textContent = [
+    ...(average ? [`เฉลี่ย ${average} กก. ต่อนักท่องเที่ยวหนึ่งคน`] : []), ...data.caveats,
+  ].map((text) => `• ${text}`).join('  ');
+}
+
+function renderAirQuality(data) {
+  monthlyComboChart('air', '#air-chart', data.months.map((row) => row.month), [
+    { type: 'bar', label: 'PM2.5 เฉลี่ย (มคก./ลบ.ม.)', yAxisID: 'y', data: data.months.map((row) => row.pm25_avg),
+      backgroundColor: '#9b7fb5aa', borderColor: '#9b7fb5', borderWidth: 1 },
+    lineOnRightAxis('วันที่เกินมาตรฐาน (วัน)', data.months.map((row) => row.exceed_days)),
+  ], (value) => (Number.isInteger(value) ? value : ''));
+  const exceeded = data.months.reduce((sum, row) => sum + (row.exceed_days || 0), 0);
+  setText('air-note', data.months.length ? `เกินมาตรฐานรวม ${exceeded} วัน ใน ${data.months.length} เดือน` : '—');
+}
+
 // ---------------------------------------------------------------- โหลดทั้งหมด
 
 // เรียกเฉพาะเมื่อมีสิทธิ์ ถ้าไม่มีให้คืน null แทนที่จะปล่อยให้ 403 ทำให้ Promise.all ล้มทั้งชุด
 const fetchIf = (permission, path) => (can(permission) ? api(path) : Promise.resolve(null));
 
 async function loadDashboard() {
-  const [summary, zones, micro, trends, traffic, recommendations, points, categories, demographics, upcoming, sources, forecast, impact] =
+  const [summary, zones, micro, trends, traffic, recommendations, points, categories, demographics, upcoming, sources, forecast, impact,
+    boats, islandWaste, airQuality] =
     await Promise.all([
       fetchIf('view:overview', '/api/summary'),
       fetchIf('view:spatial', '/api/zones'),
@@ -567,6 +668,9 @@ async function loadDashboard() {
       fetchIf('view:sources', '/api/sources'),
       fetchIf('view:forecast', '/api/forecast/tourism?months=6'),
       fetchIf('view:forecast', '/api/impact'),
+      fetchIf('view:overview', '/api/island/boats'),
+      fetchIf('view:overview', '/api/island/waste'),
+      fetchIf('view:overview', '/api/air-quality'),
     ]);
 
   if (summary) renderSummary(summary);
@@ -581,6 +685,9 @@ async function loadDashboard() {
   if (sources) renderSources(sources);
   if (forecast) renderTourismForecast(forecast);
   if (impact) renderImpact(impact);
+  if (boats) renderBoats(boats);
+  if (islandWaste) renderIslandWaste(islandWaste);
+  if (airQuality) renderAirQuality(airQuality);
 
   // สภาพอากาศเรียก API ภายนอก แยกออกมาเพื่อไม่ให้ทั้งแดชบอร์ดพังถ้าเน็ตมีปัญหา
   if (can('view:overview')) {
@@ -1067,6 +1174,7 @@ function buildReport({ summary, sources, forecast, impact, micro, recommendation
     const rows = [];
     if (impact.rain) rows.push(impactRow('ฝนมากกว่าปกติของเดือนนั้น 100 มม.', impact.rain));
     if (impact.holidays) rows.push(impactRow('วันหยุดราชการเพิ่มขึ้น 1 วัน', impact.holidays));
+    if (impact.pm25) rows.push(impactRow('PM2.5 สูงกว่าปกติของเดือนนั้น 10 มคก./ลบ.ม. (ข้อมูลสองปี)', impact.pm25));
     if (rows.length) {
       sections.push(`
         <div class="pr-section">

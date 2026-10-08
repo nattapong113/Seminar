@@ -307,10 +307,10 @@ def deseasonalized_index(series: Sequence[float]) -> list[float]:
     return [value / trend if trend else 1.0 for value, trend in zip(adjusted, expected)]
 
 
-def _impact(values: Sequence[float], driver: Sequence[float], unit_scale: float) -> dict:
+def _impact(values: Sequence[float], driver: Sequence[float], unit_scale: float, sample_size: Optional[int] = None) -> dict:
     r = correlation(driver, values)
     slope, _ = linear_fit(driver, values)
-    interval = correlation_interval(r, len(values)) if r is not None else None
+    interval = correlation_interval(r, sample_size or len(values)) if r is not None else None
     return {
         "months_used": len(values),
         "correlation": round(r, 3) if r is not None else None,
@@ -321,20 +321,56 @@ def _impact(values: Sequence[float], driver: Sequence[float], unit_scale: float)
     }
 
 
-def rain_impact(visitor_index: Sequence[float], monthly_rain_mm: Sequence[float], months: Sequence[str]) -> dict:
-    """ผลของฝนที่มากกว่าปกติของเดือนนั้น ต่อจำนวนคนหลังตัดฤดูกาลและแนวโน้มออกแล้ว"""
+def monthly_anomaly(values: Sequence[float], months: Sequence[str]) -> list[float]:
+    """ส่วนต่างของแต่ละเดือนจากค่าปกติของเดือนเดียวกันในปฏิทิน (ค่าเฉลี่ยของเดือนนั้นทุกปีที่มี)"""
     # จับกลุ่มตามเดือนในปฏิทินจากป้าย YYYY-MM ไม่ใช่ตำแหน่งในลิสต์ เผื่อข้อมูลบางเดือนขาดหาย
     by_month: dict[str, list[float]] = {}
-    for month, rain in zip(months, monthly_rain_mm):
-        by_month.setdefault(month[5:7], []).append(rain)
-    normal = {month: mean(values) for month, values in by_month.items()}
-    anomaly = [rain - normal[month[5:7]] for month, rain in zip(months, monthly_rain_mm)]
+    for month, value in zip(months, values):
+        by_month.setdefault(month[5:7], []).append(value)
+    normal = {month: mean(group) for month, group in by_month.items()}
+    return [value - normal[month[5:7]] for month, value in zip(months, values)]
+
+
+def rain_impact(visitor_index: Sequence[float], monthly_rain_mm: Sequence[float], months: Sequence[str]) -> dict:
+    """ผลของฝนที่มากกว่าปกติของเดือนนั้น ต่อจำนวนคนหลังตัดฤดูกาลและแนวโน้มออกแล้ว"""
+    anomaly = monthly_anomaly(monthly_rain_mm, months)
 
     result = _impact(list(visitor_index), anomaly, unit_scale=100)
     result["effect_unit"] = "% ต่อฝนที่มากกว่าปกติของเดือนนั้น 100 มม."
     result["monthly"] = [
         {"month": month, "rain_mm": round(rain, 1), "rain_anomaly_mm": round(value, 1), "visitor_index": round(index, 3)}
         for month, rain, value, index in zip(months, monthly_rain_mm, anomaly, visitor_index)
+    ]
+    return result
+
+
+def without_year_level(values: Sequence[float], months: Sequence[str]) -> list[float]:
+    """หักค่าเฉลี่ยของแต่ละปีออก เหลือเฉพาะการขึ้นลงภายในปีเดียวกัน"""
+    by_year: dict[str, list[float]] = {}
+    for month, value in zip(months, values):
+        by_year.setdefault(month[:4], []).append(value)
+    level = {year: mean(group) for year, group in by_year.items()}
+    return [value - level[month[:4]] for month, value in zip(months, values)]
+
+
+def pm25_impact(visitor_index: Sequence[float], monthly_pm25: Sequence[float], months: Sequence[str]) -> dict:
+    """ผลของฝุ่น PM2.5 ที่สูงกว่าปกติของเดือนนั้น ต่อจำนวนคนหลังตัดฤดูกาลและแนวโน้มออกแล้ว
+
+    ต่างจากฝนตรงที่ต้องหักระดับของทั้งปีออกด้วย PM2.5 มีข้อมูลแค่สองปี และปีหนึ่งฝุ่นสูงกว่าอีกปีทุกเดือน
+    ถ้าไม่หัก ความต่างระหว่างปี (ซึ่งมีได้ร้อยสาเหตุ) จะถูกนับเป็นผลของฝุ่น ทดลองกับข้อมูลจริงแล้วได้ r = 0.69
+    ที่ดูชัดเจน แต่พอหักระดับรายปีออกเหลือ 0.50 และช่วงความเชื่อมั่นคร่อมศูนย์
+    """
+    pm25 = without_year_level(monthly_anomaly(monthly_pm25, months), months)
+    visitors = without_year_level(monthly_anomaly(visitor_index, months), months)
+    # ค่าปกติรายเดือนและระดับรายปีประมาณจากข้อมูลชุดเดียวกัน จุดที่เป็นอิสระต่อกันจริงจึงน้อยกว่าจำนวนเดือน
+    # ใช้จำนวนนี้คำนวณช่วงความเชื่อมั่น ไม่งั้นช่วงจะแคบเกินจริง
+    independent = len(months) - len({month[5:7] for month in months}) - len({month[:4] for month in months}) + 1
+    result = _impact(visitors, pm25, unit_scale=10, sample_size=independent)
+    result["independent_points"] = independent
+    result["effect_unit"] = "% ต่อ PM2.5 ที่สูงกว่าปกติของเดือนนั้น 10 มคก./ลบ.ม."
+    result["monthly"] = [
+        {"month": month, "pm25": round(value, 2), "pm25_anomaly": round(delta, 2), "visitor_index": round(index, 3)}
+        for month, value, delta, index in zip(months, monthly_pm25, pm25, visitor_index)
     ]
     return result
 
