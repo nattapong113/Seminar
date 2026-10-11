@@ -182,7 +182,69 @@ a.nav-item{text-decoration:none}
 .chart-wrap[data-empty] canvas{visibility:hidden}
 .rank-name small{display:block;font:9px 'DM Mono';color:#9ba7a9;margin-top:2px}
 
+/* ---------------------------------------------------------------- พฤติกรรมการเดินทาง */
+.insight-list{display:grid;gap:1px}
+.insight-item{display:grid;grid-template-columns:28px 1fr;gap:10px;align-items:baseline;padding:9px 0;border-bottom:1px solid #f1f4f2}
+.insight-item:last-child{border-bottom:0}
+.insight-item .rank{font:500 10px 'DM Mono';color:#b6c0c2}
+.insight-item p{margin:0;font-size:12px;line-height:1.7}
+.ai-rank{display:inline-block;min-width:16px;text-align:center;background:var(--green);color:white;font:600 10px 'DM Mono';padding:1px 4px;margin-right:6px;vertical-align:1px}
+.ai-reason{display:block;font-size:10px;color:#3f7a56;background:#eef7f0;padding:5px 7px;margin:5px 0 4px;line-height:1.5}
+
+/* ---------------------------------------------------------------- ตารางเทียบวิธีพยากรณ์ */
+.model-table{margin-top:12px;border-top:1px solid var(--line);padding-top:8px}
+.model-row{display:grid;grid-template-columns:1fr 78px 78px 88px;gap:8px;align-items:baseline;padding:5px 0;border-bottom:1px solid #f1f4f2;font-size:11px}
+.model-row span:not(:first-child){text-align:right;font:500 11px 'DM Mono'}
+.model-head span{font:9px 'DM Mono';color:#9ba7a9}
+.model-head span:not(:first-child){font:9px 'DM Mono'}
+.model-head small{display:block;font:8px 'DM Mono';color:#b6c0c2}
+.model-row.is-chosen{background:#eef6f9;margin:0 -6px;padding:5px 6px}
+.model-row em{font-style:normal;font-size:9px;color:var(--blue);margin-left:4px}
+.ml-tag{font:600 8px 'DM Mono';color:white;background:#9b7fb5;padding:1px 4px;margin-right:5px;vertical-align:1px}
+.model-table .caveat{border-top:0;margin-top:6px;padding-top:0}
+
+/* ---------------------------------------------------------------- ธุรกิจของฉัน */
+.sample-tag{font:600 10px 'IBM Plex Sans Thai';color:#8a5a00;background:#fdf1cf;border:1px dashed #d9a520;padding:3px 8px;white-space:nowrap}
+.business-kpis{grid-template-columns:repeat(3,1fr)}
+.business-kpis:empty{display:none}
+.business-form{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+.business-form input[type=text],.business-form input[type=file]{flex:1;min-width:160px;border:1px solid var(--line);padding:7px 9px;font:400 11px 'IBM Plex Sans Thai';background:white}
+.business-form button[type=submit]{background:var(--coral);border:0;color:white;padding:9px 16px;font:600 12px 'IBM Plex Sans Thai';cursor:pointer}
+.business-form button:disabled{opacity:.5;cursor:default}
+.business-sample{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);white-space:nowrap}
+.caveat code{font:10px 'DM Mono';background:#f2f5f3;padding:1px 4px}
+.caveat a{color:var(--coral)}
+@media(max-width:700px){.business-kpis{grid-template-columns:1fr}}
+.business-ai{background:#f7faf8;border-left:3px solid var(--green);padding:10px 12px;margin-bottom:12px}
+.business-ai .ai-text{font-size:12px;line-height:1.75}
+.business-ai-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px}
+.business-ai .approve-btn{white-space:nowrap;flex-shrink:0}
+.business-ai .approve-btn:disabled{opacity:.5;cursor:default}
+
+/* ---------------------------------------------------------------- สรุปโดย AI */
+.ai-text{font-size:13px;line-height:1.85;margin:0;white-space:pre-line}
+.ai-text.is-empty{color:#9ba7a9;font-size:11px}
+#ai-warning{margin-top:10px}
+#ai-generate:disabled{opacity:.5;cursor:default}
+
 /* แถบเมนูอยู่กับที่ตอนเลื่อนหน้า ถ้าจอเตี้ยกว่าเมนูให้เลื่อนภายในแถบเองได้ */
 .sidebar{position:sticky;top:0;height:100vh;align-self:flex-start;overflow-y:auto}
 /* จอแคบซ่อนแถบข้างไม่ได้แล้ว เพราะเมนูเป็นทางเดียวที่ใช้สลับหน้า ย่อเป็นแถบเลื่อนแนวนอนด้านบนแทน */
 @media(max-width:700px){.app-shell{flex-direction:column}.sidebar{display:block;width:auto;height:auto;align-self:stretch;padding:6px 8px;z-index:1100}.sidebar .brand,.side-label,.sidebar-bottom{display:none}.sidebar nav{display:flex;overflow-x:auto;gap:2px}.nav-item{white-space:nowrap;padding:9px 10px;font-size:12px;gap:6px}.nav-item.active{border-left:0;border-bottom:3px solid var(--coral);padding-left:10px}}
+
+/* ---------------------------------------------------------------- จัดหน้าใหม่: กลุ่มเมนู หัวหน้า และสัดส่วนแผง */
+/* ข้อความไทยใช้ DM Mono แบบเว้นช่องไฟไม่ได้ สระและวรรณยุกต์จะหลุดจากตัวอักษร */
+.nav-group{font:600 10px 'IBM Plex Sans Thai';color:#6e8d8f;padding:16px 12px 6px}
+#page-group{font-family:'IBM Plex Sans Thai';letter-spacing:0;font-size:11px}
+.sidebar .brand{margin-bottom:34px}
+.nav-item{padding:10px 12px;font-size:13px}
+.page-subtitle{margin:6px 0 0;font-size:12px;color:var(--muted)}
+.topbar{align-items:flex-start;margin-bottom:22px;padding-bottom:18px;border-bottom:1px solid var(--line)}
+.toolbar{border-top:0;padding-top:0;margin-top:-6px}
+/* กราฟไม่ยืดตามแผงข้าง ๆ อีกแล้ว เดิมกราฟสูงเป็นพันพิกเซลเมื่อแผงคู่กันเป็นรายการยาว */
+.chart-panel .chart-wrap{flex:none;height:300px;min-height:0}
+.chart-panel .chart-wrap.short{height:190px}
+/* คำแนะนำเต็มความกว้างเป็นการ์ดหลายคอลัมน์ อ่านกวาดตาได้ ไม่ต้องเลื่อนลงในคอลัมน์แคบ */
+.recommendation-list.is-grid{grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px;align-items:start}
+.recommendation-list.is-grid .recommendation-item{padding:10px 12px;height:100%}
+@media(max-width:700px){.nav-group{display:none}.page-subtitle{display:none}.toolbar{margin-top:0}}

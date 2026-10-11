@@ -39,7 +39,11 @@ def decode_csv(data: bytes, name: str) -> list[dict[str, str]]:
         except UnicodeDecodeError as error:
             last_error = error
             continue
-        return list(csv.DictReader(io.StringIO(text, newline="")))
+        # หัวคอลัมน์บางไฟล์ของต้นทางมีเว้นวรรคหน้าหลัง (เช่น " budget_year_2565 ") ตัดออกให้เทียบชื่อได้
+        return [
+            {(header.strip() if header else header): value for header, value in row.items()}
+            for row in csv.DictReader(io.StringIO(text, newline=""))
+        ]
     raise ValueError(f"อ่านไฟล์ {name} ไม่ได้: {last_error}")
 
 
@@ -219,6 +223,28 @@ def island_waste_rows(source_file: str, row: dict[str, str]) -> list[tuple]:
     )]
 
 
+def city_revenue_rows(source_file: str, row: dict[str, str]) -> list[tuple]:
+    """ไฟล์เป็นตารางกว้าง หนึ่งรายการรายได้ต่อแถว หนึ่งปีงบประมาณต่อคอลัมน์ (budget_year_2565, ...)"""
+    name = clean(row.get("income_name"))
+    if not name:
+        return []
+    values = []
+    for column, raw_value in row.items():
+        # ต้นทางใส่ "-" ในปีที่ไม่มีรายได้รายการนั้น ไม่นับเป็น 0 เพราะอาจเป็นรายการที่ยังไม่มีในปีนั้น
+        if not column or not column.startswith("budget_year_") or clean(raw_value) in ("", "-"):
+            continue
+        year_be = buddhist_year(column.removeprefix("budget_year_"))
+        values.append((
+            source_file, year_be, year_be - 543,
+            clean(row.get("income_category_id")) or None,
+            clean(row.get("income_category_name")) or "ไม่ระบุหมวด",
+            clean(row.get("income_id")) or None,
+            name,
+            decimal(raw_value),
+        ))
+    return values
+
+
 @dataclass(frozen=True)
 class Dataset:
     label: str
@@ -266,6 +292,13 @@ ISLAND_WASTE = Dataset(
 )
 
 
+CITY_REVENUE = Dataset(
+    "รายได้ของเมืองรายปีงบประมาณ", "city_revenue_yearly",
+    ("source_file", "budget_year_be", "budget_year", "category_id", "category_name", "income_id", "income_name", "amount_baht"),
+    ("budget_year_be", "income_name"), city_revenue_rows,
+)
+
+
 def detect_dataset(headers: set[str]) -> Optional[Dataset]:
     """เลือกรูปแบบไฟล์จากหัวคอลัมน์ คืน None ถ้าไม่รู้จัก"""
     if {"calendar_year", "month_id", "number_of_tourists"}.issubset(headers):
@@ -282,6 +315,8 @@ def detect_dataset(headers: set[str]) -> Optional[Dataset]:
         return AIR_QUALITY
     if {"calendar_year", "month_name", "waste_type", "waste_amount_ton"}.issubset(headers):
         return ISLAND_WASTE
+    if {"income_category_name", "income_name"}.issubset(headers) and any(h.startswith("budget_year_") for h in headers):
+        return CITY_REVENUE
     return None
 
 

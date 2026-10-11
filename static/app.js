@@ -19,7 +19,10 @@ const postJson = (path, payload) => api(path, {
 const numberFormat = new Intl.NumberFormat('th-TH');
 const compactFormat = new Intl.NumberFormat('th-TH', { notation: 'compact', maximumFractionDigits: 2 });
 const charts = {};
-const state = { demographics: [], user: null, permissions: [], page: null, mapData: null };
+const state = {
+  demographics: [], user: null, permissions: [], page: null, mapData: null,
+  aiSummary: null, recommendations: null, behavior: null, revenue: null, business: null,
+};
 
 const can = (permission) => state.permissions.includes(permission);
 
@@ -254,12 +257,26 @@ function renderRanking(zones) {
     </div>`).join('');
 }
 
+// ถ้ามีลำดับที่ AI จัดไว้ ให้ข้อเหล่านั้นขึ้นก่อนตามลำดับพร้อมเหตุผล ข้อที่ AI ไม่ได้เลือกต่อท้ายตามลำดับของกฎ
+// จับคู่ด้วย key ของกฎ เพราะหัวข้อเปลี่ยนตามข้อมูล ข้อที่ AI เคยจัดไว้แต่ตอนนี้กฎไม่สร้างแล้วจะหายไปเอง
+function orderedRecommendations(items, ranking = state.aiSummary?.ranking) {
+  const byKey = new Map(items.map((item) => [item.key, item]));
+  const ranked = (ranking || []).filter((entry) => byKey.has(entry.key))
+    .map((entry, index) => ({ ...byKey.get(entry.key), aiRank: index + 1, aiReason: entry.reason }));
+  const used = new Set(ranked.map((item) => item.key));
+  return [...ranked, ...items.filter((item) => !used.has(item.key))];
+}
+
 function renderRecommendations(items) {
-  document.querySelector('#recommendation-list').innerHTML = items.map((item) => `
+  state.recommendations = items;
+  const ordered = orderedRecommendations(items);
+  setText('recommendation-note', ordered.some((item) => item.aiRank) ? 'AI จัดลำดับความเร่งด่วน' : 'เรียงตามกฎของระบบ');
+  document.querySelector('#recommendation-list').innerHTML = ordered.map((item) => `
     <div class="recommendation-item">
       <span class="signal">${item.signal}</span>
-      <strong>${item.title}</strong>
+      <strong>${item.aiRank ? `<b class="ai-rank">${item.aiRank}</b>` : ''}${item.title}</strong>
       <p>${item.detail}</p>
+      ${item.aiReason ? `<span class="ai-reason">AI: ${escapeHtml(item.aiReason)}</span>` : ''}
       ${item.assumption ? `<span class="assumption">${item.assumption}</span>` : ''}
       <cite>${item.source}</cite>
     </div>`).join('');
@@ -420,6 +437,11 @@ function renderTourismForecast(data) {
   const forecast = [...pad, history[history.length - 1].visitors, ...data.forecast.map((row) => row.visitors)];
   const upper = [...pad, history[history.length - 1].visitors, ...data.forecast.map((row) => row.upper)];
   const lower = [...pad, history[history.length - 1].visitors, ...data.forecast.map((row) => row.lower)];
+  // วิธีที่ดีที่สุดของอีกกลุ่ม (ถ้าวิธีหลักใช้ ML เส้นนี้คือวิธีสถิติ และกลับกัน) ให้เห็นว่าสองแนวทางทายต่างกันแค่ไหน
+  const other = data.alternative;
+  const otherLine = other
+    ? [...pad, history[history.length - 1].visitors, ...other.forecast.map((row) => row.visitors)] : null;
+  const kind = (isMl) => (isMl ? 'ML' : 'สถิติ');
 
   charts.forecast?.destroy();
   charts.forecast = new Chart(document.querySelector('#forecast-chart'), {
@@ -432,8 +454,10 @@ function renderTourismForecast(data) {
         { label: 'ขอบล่าง', data: lower, borderWidth: 0, pointRadius: 0, fill: false, order: 3 },
         { label: 'จำนวนจริง', data: actual, borderColor: ACTUAL_COLOR, backgroundColor: ACTUAL_COLOR,
           borderWidth: 2, pointRadius: 0, tension: 0.3, order: 1 },
-        { label: 'พยากรณ์', data: forecast, borderColor: FORECAST_COLOR, backgroundColor: FORECAST_COLOR,
+        { label: `พยากรณ์ (${kind(data.model.uses_ml)})`, data: forecast, borderColor: FORECAST_COLOR, backgroundColor: FORECAST_COLOR,
           borderWidth: 2, borderDash: [5, 4], pointRadius: 3, tension: 0.3, order: 2 },
+        ...(otherLine ? [{ label: `เทียบ: ${other.label} (${kind(other.is_ml)})`, data: otherLine, borderColor: '#9b7fb5',
+          backgroundColor: '#9b7fb5', borderWidth: 1.5, borderDash: [2, 3], pointRadius: 0, tension: 0.3, order: 2 }] : []),
       ],
     },
     options: {
@@ -468,6 +492,23 @@ function renderTourismForecast(data) {
     <div class="accuracy-item"><span>วิธีพื้นฐาน (เดือนเดียวกันปีก่อน)</span><b>${accuracy.seasonal_naive_mape_percent}%</b></div>
     <div class="accuracy-item"><span>ทายล่วงหน้า 1 เดือน</span><b>${accuracy.one_step_mape_percent}%</b></div>
     <div class="accuracy-item"><span>ข้อมูลที่ใช้</span><b>${data.data.months_available} เดือน</b></div>`;
+
+  // ตารางเทียบทุกวิธี เรียงตามคะแนนปีตรวจสอบซึ่งเป็นตัวที่ใช้เลือก คอลัมน์ปีทดสอบมีไว้ดูว่าที่เลือกมานั้นทายปีที่ไม่เคยเห็นได้แค่ไหน
+  const percent = (value) => (value === null ? '—' : `${value}%`);
+  document.querySelector('#forecast-comparison').innerHTML = `
+    <div class="model-row model-head">
+      <span>วิธีพยากรณ์ที่แข่งกัน</span><span>ปีตรวจสอบ<small>ใช้เลือกวิธี</small></span>
+      <span>ปีทดสอบ<small>ทายทั้งปี</small></span><span>ปีทดสอบ<small>อัปเดตรายเดือน</small></span>
+    </div>
+    ${data.comparison.map((row) => `
+      <div class="model-row${row.is_chosen ? ' is-chosen' : ''}">
+        <span>${row.is_ml ? '<b class="ml-tag">ML</b>' : ''}${escapeHtml(row.label)}${row.is_chosen ? ' <em>ใช้เป็นหลัก</em>' : ''}</span>
+        <span>${percent(row.validation_mape_percent)}</span>
+        <span>${percent(row.test_mape_percent)}</span>
+        <span>${percent(row.test_rolling_mape_percent)}</span>
+      </div>`).join('')}
+    <p class="caveat">ตัวเลขคือความคลาดเคลื่อนเฉลี่ย ยิ่งต่ำยิ่งแม่น ระบบเลือกวิธีจากปีตรวจสอบเท่านั้น
+      วิธีที่ถูกเลือกจึงไม่จำเป็นต้องดีที่สุดในปีทดสอบ และด้วยข้อมูลเพียง 4 ปี อันดับยังเปลี่ยนได้เมื่อมีข้อมูลเพิ่ม</p>`;
 
   document.querySelector('#forecast-table').innerHTML = data.forecast.map((row) => `
     <div class="forecast-row">
@@ -554,6 +595,269 @@ function renderImpact(data) {
 
   document.querySelector('#impact-caveats').textContent = data.caveats.map((text) => `• ${text}`).join('  ');
 }
+
+// ---------------------------------------------------------------- พฤติกรรมการเดินทาง / เศรษฐกิจ
+
+// กราฟแท่งตามหมวดหมู่ (ไม่ใช่รายเดือน) ใช้กับฤดูกาล ท่าเรือ และรายได้ของเมือง
+function categoryChart(key, canvasId, labels, datasets, { stacked = false, format = (value) => compactFormat.format(value) } = {}) {
+  charts[key]?.destroy();
+  const canvas = document.querySelector(canvasId);
+  if (!labels.length) {
+    canvas.parentElement.dataset.empty = 'ยังไม่มีข้อมูล นำเข้าไฟล์ได้ที่เมนูจัดการข้อมูล';
+    charts[key] = null;
+    return;
+  }
+  delete canvas.parentElement.dataset.empty;
+  const tick = { color: '#9aa5a7', font: { family: 'DM Mono', size: 9 } };
+  charts[key] = new Chart(canvas, {
+    type: 'bar',
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: datasets.length > 1, labels: { font: { family: 'IBM Plex Sans Thai', size: 10 }, boxWidth: 10 } },
+        tooltip: { callbacks: { label: (context) => `${context.dataset.label}: ${format(context.parsed.y)}` } },
+      },
+      scales: {
+        x: { stacked, grid: { display: false }, ticks: { ...tick, maxRotation: 0 } },
+        y: { stacked, grid: { color: '#edf1ef' }, ticks: { ...tick, callback: format } },
+      },
+    },
+  });
+}
+
+function renderBehavior(data) {
+  state.behavior = data;
+  document.querySelector('#behavior-insights').innerHTML = data.insights.map((text, index) => `
+    <div class="insight-item"><span class="rank">${String(index + 1).padStart(2, '0')}</span><p>${escapeHtml(text)}</p></div>`).join('')
+    || '<div class="loading">ยังไม่มีข้อมูลพอให้วิเคราะห์</div>';
+  document.querySelector('#behavior-caveats').textContent = data.caveats.map((text) => `• ${text}`).join('  ');
+
+  const differences = data.seasonality.map((item) => Math.round((item.index - 1) * 1000) / 10);
+  categoryChart('season', '#season-chart', data.seasonality.map((item) => THAI_MONTHS[item.month_id - 1]), [{
+    label: 'เทียบค่าเฉลี่ยทั้งปี', data: differences,
+    backgroundColor: differences.map((value) => (value >= 0 ? '#ee745baa' : '#4b90a9aa')),
+    borderColor: differences.map((value) => (value >= 0 ? '#ee745b' : '#4b90a9')), borderWidth: 1,
+  }], { format: (value) => `${value > 0 ? '+' : ''}${value}%` });
+
+  categoryChart('pier', '#pier-chart', data.piers.map((pier) => `ท่า${pier.pier}`), [
+    { label: 'ขึ้นเกาะ (ขาไป)', data: data.piers.map((pier) => pier.arrivals), backgroundColor: '#4b90a9aa', borderColor: '#4b90a9', borderWidth: 1 },
+    { label: 'ออกจากเกาะ (ขากลับ)', data: data.piers.map((pier) => pier.departures), backgroundColor: '#e5b84daa', borderColor: '#e5b84d', borderWidth: 1 },
+  ]);
+}
+
+function renderRevenue(data) {
+  state.revenue = data;
+  const categories = [...new Set(data.years.flatMap((year) => Object.keys(year.by_category)))];
+  // ป้ายเป็นปีงบประมาณ พ.ศ. ตามที่ต้นทางใช้ จะได้ไม่สับสนกับปีปฏิทินของกราฟอื่น
+  categoryChart('revenue', '#revenue-chart', data.years.map((year) => `ปีงบ ${year.budget_year + 543}`),
+    categories.map((category, index) => ({
+      label: category.replace(/^หมวด/, ''), data: data.years.map((year) => year.by_category[category] ?? 0),
+      backgroundColor: `${PALETTE[index % PALETTE.length]}cc`, borderColor: PALETTE[index % PALETTE.length], borderWidth: 1,
+    })), { stacked: true, format: (value) => `${compactFormat.format(value)} บาท` });
+  const latest = data.years[data.years.length - 1];
+  setText('revenue-note', latest
+    ? `ปีงบ ${latest.budget_year + 543}: ${compactFormat.format(latest.total_baht)} บาท${
+      latest.change_percent === null ? '' : ` (${latest.change_percent > 0 ? '+' : ''}${latest.change_percent}%)`}`
+    : '—');
+  document.querySelector('#revenue-caveats').textContent = data.caveats.map((text) => `• ${text}`).join('  ');
+
+  const top = data.top_items[0]?.amount_baht || 1;
+  document.querySelector('#revenue-list').innerHTML = data.top_items.map((item, index) => `
+    <div class="ranking-item">
+      <span class="rank">${String(index + 1).padStart(2, '0')}</span>
+      <div>
+        <div class="rank-name">${escapeHtml(item.income_name.replace(/^-\s*/, ''))} <small>${escapeHtml(item.category_name.replace(/^หมวด/, ''))}${
+          item.change_percent === null ? '' : ` · ${item.change_percent > 0 ? '+' : ''}${item.change_percent}% จากปีก่อน`}</small></div>
+        <div class="rank-bar"><i style="width:${Math.max(4, item.amount_baht / top * 100)}%"></i></div>
+      </div>
+      <div class="rank-value">${compactFormat.format(item.amount_baht)}<span class="rank-unit">บาท</span></div>
+    </div>`).join('') || '<div class="loading">ยังไม่มีข้อมูล</div>';
+}
+
+// ---------------------------------------------------------------- ธุรกิจของฉัน
+
+const baht = (value) => `${numberFormat.format(value)} บาท`;
+const signed = (value) => `${value > 0 ? '+' : ''}${value}%`;
+
+function renderBusiness(data) {
+  state.business = data;
+  const info = data.business;
+  // ส่วนรายละเอียดซ่อนด้วย hidden ของตัวเอง แยกจากการซ่อนตามสิทธิ์ จึงครอบด้วย div ไม่ได้ ต้องเช็กสิทธิ์ซ้ำตรงนี้
+  document.querySelectorAll('[data-business-detail]').forEach((section) => { section.hidden = !info || !can('manage:business'); });
+  document.querySelectorAll('[data-sample-tag]').forEach((tag) => { tag.hidden = !info?.is_sample; });
+  document.querySelector('#business-delete').hidden = !info;
+  setText('business-title', info ? info.name : 'ธุรกิจของฉัน');
+  if (!info) {
+    setText('business-meta', 'ยังไม่มีข้อมูล');
+    document.querySelector('#business-kpis').innerHTML = '';
+    return;
+  }
+  const summary = data.summary;
+  setText('business-meta', `${monthLabel(summary.first_month)} – ${monthLabel(summary.last_month)} · ${summary.months} เดือน · อัปโหลด ${info.uploaded_at}`);
+  document.querySelector('#business-name').value = info.name;
+  document.querySelector('#business-sample').checked = info.is_sample;
+
+  const kpis = [
+    ['รายได้ 12 เดือนล่าสุด', baht(summary.revenue_last_12),
+      summary.revenue_change_percent === null ? 'ยังเทียบปีก่อนไม่ได้' : `${signed(summary.revenue_change_percent)} เทียบ 12 เดือนก่อนหน้า`],
+  ];
+  if (summary.customers_last_12 !== null) {
+    kpis.push(['ลูกค้า 12 เดือนล่าสุด', numberFormat.format(summary.customers_last_12), 'ตามคอลัมน์ customers ในไฟล์']);
+    kpis.push(['รายได้ต่อลูกค้า', summary.revenue_per_customer === null ? '—' : baht(summary.revenue_per_customer), 'เฉลี่ย 12 เดือนล่าสุด']);
+  }
+  document.querySelector('#business-kpis').innerHTML = kpis.map(([label, value, note]) => `
+    <div class="impact-tile"><span>${label}</span><b>${value}</b><em>${note}</em></div>`).join('');
+
+  monthlyComboChart('business', '#business-chart', data.months.map((row) => row.month), [
+    { type: 'bar', label: 'รายได้ของธุรกิจ (บาท)', yAxisID: 'y', data: data.months.map((row) => row.revenue),
+      backgroundColor: '#4b90a9aa', borderColor: '#4b90a9', borderWidth: 1 },
+    lineOnRightAxis('นักท่องเที่ยวลงเกาะล้าน (คน)', data.months.map((row) => row.tourists)),
+  ]);
+
+  const linkLabels = { tourists: 'นักท่องเที่ยวมากกว่าที่คาด 10%', rain: 'ฝนมากกว่าปกติ 100 มม.', holidays: 'วันหยุดเพิ่ม 1 วัน' };
+  document.querySelector('#business-links').innerHTML = Object.entries(data.links).map(([key, link]) => `
+    <div class="impact-tile ${link.significant ? '' : 'is-weak'}">
+      <span>${linkLabels[key]}</span>
+      <b>${signed(link.effect_percent)}</b>
+      <em>${link.significant ? 'ความสัมพันธ์ชัดเจน' : 'ยังสรุปไม่ได้'} · r = ${link.correlation} · ${link.months_used} เดือน</em>
+    </div>`).join('') || `<div class="loading">${escapeHtml(data.note || 'ยังวิเคราะห์ความสัมพันธ์ไม่ได้')}</div>`;
+  document.querySelector('#business-caveats').textContent = data.caveats.map((text) => `• ${text}`).join('  ');
+
+  document.querySelector('#business-forecast').innerHTML = data.forecast ? data.forecast.points.map((point) => `
+    <div class="forecast-row">
+      <span>${monthLabel(point.month)}</span>
+      <b>${baht(point.revenue)}</b>
+      <em>${point.lower === null ? '' : `${compactFormat.format(point.lower)}–${compactFormat.format(point.upper)}`}</em>
+    </div>`).join('') : '';
+  const ai = data.ai;
+  const aiText = document.querySelector('#business-ai-text');
+  aiText.classList.toggle('is-empty', !ai);
+  aiText.textContent = ai ? ai.content : (data.ai_enabled
+    ? 'ยังไม่มีบทสรุปจาก AI คำแนะนำด้านล่างเรียงตามกฎของระบบ'
+    : 'ยังไม่ได้เปิดใช้ AI (ผู้ดูแลระบบต้องตั้ง GEMINI_API_KEY)');
+  setText('business-ai-meta', ai ? `เรียบเรียงโดย AI · ${ai.model} · ${ai.created_at}` : '');
+  document.querySelector('#business-ai-generate').disabled = !data.ai_enabled;
+  const aiWarning = document.querySelector('#business-ai-warning');
+  aiWarning.hidden = !ai?.unverified_numbers.length;
+  aiWarning.textContent = ai?.unverified_numbers.length
+    ? `ตัวเลขที่ AI เขียนแต่ไม่พบในข้อมูลที่ส่งไป: ${ai.unverified_numbers.join(', ')} — ตรวจสอบก่อนใช้ หรือกดสรุปใหม่` : '';
+
+  document.querySelector('#business-recommendations').innerHTML = orderedRecommendations(data.recommendations, ai?.ranking).map((item) => `
+    <div class="recommendation-item">
+      <span class="signal">${escapeHtml(item.signal)}</span>
+      <strong>${item.aiRank ? `<b class="ai-rank">${item.aiRank}</b>` : ''}${escapeHtml(item.title)}</strong>
+      <p>${escapeHtml(item.detail)}</p>
+      ${item.aiReason ? `<span class="ai-reason">AI: ${escapeHtml(item.aiReason)}</span>` : ''}
+      ${item.assumption ? `<span class="assumption">${escapeHtml(item.assumption)}</span>` : ''}
+    </div>`).join('') || '<div class="loading">ยังไม่มีคำแนะนำ</div>';
+}
+
+document.querySelector('#business-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const file = document.querySelector('#business-file').files[0];
+  const box = document.querySelector('#business-result');
+  const button = document.querySelector('#business-submit');
+  button.disabled = true;
+  const parameters = new URLSearchParams({
+    filename: file.name, name: document.querySelector('#business-name').value,
+    sample: document.querySelector('#business-sample').checked,
+  });
+  try {
+    const result = await api(`/api/business?${parameters}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file,
+    });
+    box.hidden = false;
+    if (result.ok) {
+      box.className = 'upload-result login-success';
+      box.textContent = `บันทึกข้อมูล ${result.months} เดือนแล้ว`;
+      document.querySelector('#business-file').value = '';
+      renderBusiness(await api('/api/business'));
+    } else {
+      box.className = 'upload-result login-error';
+      box.innerHTML = `อัปโหลดไม่สำเร็จ ข้อมูลเดิมไม่ถูกแก้ไข<ul class="upload-errors">${result.errors.map((error) => (
+        `<li>${error.row_number ? `บรรทัด ${error.row_number}: ` : ''}${escapeHtml(error.error_text)}</li>`)).join('')}</ul>`;
+    }
+  } catch (caught) {
+    box.hidden = false;
+    box.className = 'upload-result login-error';
+    box.textContent = caught.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+document.querySelector('#business-ai-generate').addEventListener('click', async () => {
+  // ข้อมูลของธุรกิจจริงออกนอกระบบได้ก็ต่อเมื่อเจ้าของรับทราบและยืนยันเอง ข้อมูลสมมติไม่ต้องถาม
+  if (!state.business.business.is_sample && !confirm(
+    'ระบบจะส่งตัวเลขสรุปของธุรกิจนี้ (ยอดรวม พยากรณ์ และผลทางสถิติ) ให้ Google Gemini เรียบเรียง\n'
+    + 'บริการแบบโควตาฟรีอาจนำข้อความไปใช้ปรับปรุงผลิตภัณฑ์ของ Google ได้\n\nยืนยันส่งข้อมูล ?')) return;
+  const button = document.querySelector('#business-ai-generate');
+  const warning = document.querySelector('#business-ai-warning');
+  button.disabled = true;
+  button.textContent = 'กำลังสรุป...';
+  try {
+    renderBusiness(await postJson('/api/business/ai', {}));
+  } catch (caught) {
+    warning.hidden = false;
+    warning.textContent = caught.message;
+    button.disabled = false;
+  } finally {
+    button.textContent = 'ให้ AI สรุปและจัดลำดับ';
+  }
+});
+
+document.querySelector('#business-delete').addEventListener('click', async () => {
+  if (!confirm('ลบข้อมูลธุรกิจของฉันทั้งหมด ?')) return;
+  await api('/api/business', { method: 'DELETE' });
+  document.querySelector('#business-result').hidden = true;
+  document.querySelector('#business-form').reset();
+  renderBusiness(await api('/api/business'));
+});
+
+// ---------------------------------------------------------------- สรุปโดย AI
+
+function renderAiSummary(data) {
+  state.aiSummary = data.summary;
+  const summary = data.summary;
+  // ลำดับของคำแนะนำมากับบทสรุป วาดรายการใหม่ให้ตรงกับลำดับล่าสุด
+  if (state.recommendations) renderRecommendations(state.recommendations);
+  // ผู้ใช้ทั่วไปเห็นกล่องนี้เมื่อมีบทสรุปแล้วเท่านั้น ส่วนผู้ดูแลเห็นเสมอเพราะต้องเป็นคนกดสร้าง
+  document.querySelector('#ai-section').hidden = !summary && !can('manage:data');
+  const text = document.querySelector('#ai-text');
+  text.classList.toggle('is-empty', !summary);
+  text.textContent = summary ? summary.content : (data.enabled
+    ? 'ยังไม่มีบทสรุป กด "สรุปใหม่" เพื่อให้ AI เรียบเรียงจากข้อมูลปัจจุบัน'
+    : 'ยังไม่ได้เปิดใช้ AI ใส่ GEMINI_API_KEY ในไฟล์ .env แล้วเปิดเซิร์ฟเวอร์ใหม่ (ดูวิธีขอ key ใน README)');
+  setText('ai-meta', summary
+    ? `${summary.model} · ${summary.created_at}${summary.stale ? ' · มีข้อมูลใหม่หลังสรุปครั้งนี้' : ''}`
+    : '—');
+  document.querySelector('#ai-generate').disabled = !data.enabled;
+  const unverified = summary?.unverified_numbers || [];
+  showAiWarning(can('manage:data') && unverified.length
+    ? `ตัวเลขในบทสรุปที่ไม่พบในข้อมูลที่ส่งให้ AI: ${unverified.join(', ')} — ตรวจสอบก่อนใช้ หรือกดสรุปใหม่`
+    : '');
+}
+
+function showAiWarning(message) {
+  const warning = document.querySelector('#ai-warning');
+  warning.hidden = !message;
+  warning.textContent = message;
+}
+
+document.querySelector('#ai-generate').addEventListener('click', async () => {
+  const button = document.querySelector('#ai-generate');
+  button.disabled = true;
+  button.textContent = 'กำลังสรุป...';
+  try {
+    renderAiSummary(await postJson('/api/ai/summary', {}));
+  } catch (caught) {
+    showAiWarning(caught.message);
+    button.disabled = false;
+  } finally {
+    button.textContent = 'สรุปใหม่';
+  }
+});
 
 // ---------------------------------------------------------------- เกาะล้านและสิ่งแวดล้อม
 
@@ -653,7 +957,7 @@ const fetchIf = (permission, path) => (can(permission) ? api(path) : Promise.res
 
 async function loadDashboard() {
   const [summary, zones, micro, trends, traffic, recommendations, points, categories, demographics, upcoming, sources, forecast, impact,
-    boats, islandWaste, airQuality] =
+    boats, islandWaste, airQuality, aiSummary, behavior, revenue, myBusiness] =
     await Promise.all([
       fetchIf('view:overview', '/api/summary'),
       fetchIf('view:spatial', '/api/zones'),
@@ -671,6 +975,10 @@ async function loadDashboard() {
       fetchIf('view:overview', '/api/island/boats'),
       fetchIf('view:overview', '/api/island/waste'),
       fetchIf('view:overview', '/api/air-quality'),
+      fetchIf('view:overview', '/api/ai/summary'),
+      fetchIf('view:overview', '/api/behavior'),
+      fetchIf('view:overview', '/api/economy/revenue'),
+      fetchIf('manage:business', '/api/business'),
     ]);
 
   if (summary) renderSummary(summary);
@@ -688,6 +996,10 @@ async function loadDashboard() {
   if (boats) renderBoats(boats);
   if (islandWaste) renderIslandWaste(islandWaste);
   if (airQuality) renderAirQuality(airQuality);
+  if (aiSummary) renderAiSummary(aiSummary);
+  if (behavior) renderBehavior(behavior);
+  if (revenue) renderRevenue(revenue);
+  if (myBusiness) renderBusiness(myBusiness);
 
   // สภาพอากาศเรียก API ภายนอก แยกออกมาเพื่อไม่ให้ทั้งแดชบอร์ดพังถ้าเน็ตมีปัญหา
   if (can('view:overview')) {
@@ -705,6 +1017,20 @@ async function loadDashboard() {
 
 // ---------------------------------------------------------------- สลับหน้า
 
+// ชื่อและคำอธิบายของแต่ละหน้า แสดงที่หัวหน้าเว็บ ให้รู้ว่าอยู่หน้าไหนและหน้านี้ตอบคำถามอะไร
+const PAGES = {
+  overview: ['ภาพรวมเมือง', 'ตัวเลขหลัก แนวโน้ม และสิ่งที่ควรทำก่อน'],
+  spatial: ['พื้นที่และย่าน', 'ธุรกิจและการจราจรกระจุกตัวอยู่ตรงไหนของเมือง'],
+  behavior: ['พฤติกรรมการเดินทาง', 'นักท่องเที่ยวเกาะล้านเดินทางช่วงไหน ขึ้นลงท่าไหน และใช้เรือแบบใด'],
+  forecast: ['พยากรณ์และผลกระทบ', 'เดือนข้างหน้าจะมีนักท่องเที่ยวเท่าไร และฝนหรือวันหยุดมีผลแค่ไหน'],
+  island: ['สิ่งแวดล้อม', 'ภาระขยะบนเกาะล้านและคุณภาพอากาศของเมือง'],
+  context: ['เศรษฐกิจและประชากร', 'รายได้ของเมือง ประชากรแฝง และโครงสร้างธุรกิจ'],
+  business: ['ธุรกิจของฉัน', 'รายได้ของธุรกิจคุณ เทียบกับบริบทของเมือง'],
+  sources: ['แหล่งข้อมูล', 'ข้อมูลแต่ละชุดมาจากไหน และนำเข้าล่าสุดเมื่อไร'],
+  data: ['จัดการข้อมูล', 'นำเข้าไฟล์ และอัปเดตข้อมูลจากแหล่งภายนอก'],
+  admin: ['จัดการผู้ใช้', 'บัญชีผู้ใช้ บทบาท และประวัติการใช้งาน'],
+};
+
 function showPage(page) {
   // หน้าที่ขอมาอาจไม่มีอยู่หรือบทบาทนี้ไม่มีสิทธิ์ (เช่น เปิดลิงก์ที่คนอื่นส่งมา) ให้ไปหน้าแรกที่เข้าได้แทน
   const links = [...document.querySelectorAll('.nav-item[data-page]')].filter((link) => !link.hidden);
@@ -715,6 +1041,13 @@ function showPage(page) {
     section.classList.toggle('page-hidden', section.dataset.page !== state.page);
   });
   document.querySelectorAll('.nav-item').forEach((link) => link.classList.toggle('active', link === target));
+  const [title, subtitle] = PAGES[state.page];
+  setText('page-title', title);
+  setText('page-subtitle', subtitle);
+  // ชื่อกลุ่มคือหัวข้อกลุ่มที่อยู่เหนือเมนูนี้ เมนูแรกไม่มีกลุ่ม
+  let heading = target.previousElementSibling;
+  while (heading && !heading.classList.contains('nav-group')) heading = heading.previousElementSibling;
+  setText('page-group', heading ? heading.textContent : 'ภาพรวม');
   if (state.page === 'spatial') drawMap();
   else if (window.poiHeat) window.map.removeLayer(window.poiHeat);
 }
@@ -733,6 +1066,16 @@ function applyPermissions() {
   // ระบุได้หลายสิทธิ์คั่นด้วยเว้นวรรค มีสิทธิ์ใดสิทธิ์หนึ่งก็เห็น (ใช้กับเมนูของหน้าที่มีเนื้อหาหลายกลุ่มสิทธิ์)
   document.querySelectorAll('[data-permission]').forEach((element) => {
     element.hidden = !element.dataset.permission.split(' ').some(can);
+  });
+  // หัวข้อกลุ่มในเมนูที่ไม่เหลือรายการให้บทบาทนี้เห็น ไม่ต้องแสดง
+  document.querySelectorAll('.nav-group').forEach((group) => {
+    let item = group.nextElementSibling;
+    let visible = false;
+    while (item && !item.classList.contains('nav-group')) {
+      visible = visible || !item.hidden;
+      item = item.nextElementSibling;
+    }
+    group.hidden = !visible;
   });
   setText('user-name', state.user.full_name || state.user.username);
   setText('user-role', state.user.role_labels.join(' · ') || 'ไม่มีบทบาท');
@@ -1111,6 +1454,15 @@ function buildReport({ summary, sources, forecast, impact, micro, recommendation
       <div class="pr-meta">สร้างเมื่อ ${new Date().toLocaleString('th-TH')} · ข้อมูลจริงจาก Open Data ทั้งหมด ไม่มีข้อมูลจำลอง</div>
     </div>`);
 
+  if (state.aiSummary) {
+    sections.push(`
+      <div class="pr-section">
+        <h2>บทสรุปสำหรับผู้บริหาร</h2>
+        <p style="margin:0 0 4px;line-height:1.7">${escapeHtml(state.aiSummary.content)}</p>
+        <cite style="font-size:9px;color:#718087">เรียบเรียงโดย AI (${escapeHtml(state.aiSummary.model)}) เมื่อ ${escapeHtml(state.aiSummary.created_at)} จากตัวเลขในรายงานนี้</cite>
+      </div>`);
+  }
+
   sections.push(`
     <div class="pr-section">
       <h2>ตัวชี้วัดภาพรวม</h2>
@@ -1150,7 +1502,9 @@ function buildReport({ summary, sources, forecast, impact, micro, recommendation
         <h2>พยากรณ์นักท่องเที่ยว</h2>
         <p style="margin:0 0 6px">วิธีที่เลือกอัตโนมัติ: <b>${escapeHtml(forecast.model.label)}</b> —
           คลาดเคลื่อนในปีทดสอบ ${forecast.accuracy.test_mape_percent}%
-          (วิธีพื้นฐาน "เดือนเดียวกันปีก่อน" ${forecast.accuracy.seasonal_naive_mape_percent}%)</p>
+          (วิธีพื้นฐาน "เดือนเดียวกันปีก่อน" ${forecast.accuracy.seasonal_naive_mape_percent}%)${
+            forecast.alternative ? ` · วิธี${forecast.alternative.is_ml ? ' ML ' : 'สถิติ'}ที่ดีที่สุดสำหรับเทียบ: ${
+              escapeHtml(forecast.alternative.label)} ${forecast.alternative.test_mape_percent}%` : ''}</p>
         ${reportTable(
           [{ label: 'เดือน' }, { label: 'พยากรณ์ (คน)', num: true }, { label: 'ช่วงประมาณ 95%', num: true }],
           forecast.forecast.map((row) => [
@@ -1187,14 +1541,52 @@ function buildReport({ summary, sources, forecast, impact, micro, recommendation
     }
   }
 
+  if (state.behavior?.insights.length) {
+    sections.push(`
+      <div class="pr-section">
+        <h2>พฤติกรรมการเดินทางของนักท่องเที่ยวเกาะล้าน</h2>
+        ${state.behavior.insights.map((text) => `<p style="margin:0 0 3px">• ${escapeHtml(text)}</p>`).join('')}
+      </div>`);
+  }
+
+  if (state.revenue?.years.length) {
+    sections.push(`
+      <div class="pr-section">
+        <h2>รายได้ของเมืองพัทยารายปีงบประมาณ</h2>
+        ${reportTable(
+          [{ label: 'ปีงบประมาณ' }, { label: 'รายได้รวม (บาท)', num: true }, { label: 'เทียบปีก่อน', num: true }],
+          state.revenue.years.map((year) => [
+            year.budget_year + 543,
+            numberFormat.format(year.total_baht),
+            year.change_percent === null ? '—' : `${year.change_percent > 0 ? '+' : ''}${year.change_percent}%`,
+          ])
+        )}
+      </div>`);
+  }
+
+  if (state.business?.business) {
+    const own = state.business;
+    sections.push(`
+      <div class="pr-section">
+        <h2>ธุรกิจของฉัน: ${escapeHtml(own.business.name)}${own.business.is_sample ? ' — ข้อมูลสมมติเพื่อสาธิต ไม่ใช่ข้อมูลของธุรกิจจริง' : ''}</h2>
+        <p style="margin:0 0 6px">รายได้ 12 เดือนล่าสุด ${baht(own.summary.revenue_last_12)}${
+          own.summary.revenue_change_percent === null ? '' : ` (${signed(own.summary.revenue_change_percent)} เทียบ 12 เดือนก่อนหน้า)`
+        } · ข้อมูล ${monthLabel(own.summary.first_month)} – ${monthLabel(own.summary.last_month)}</p>
+        ${own.ai ? `<p style="margin:0 0 6px;line-height:1.7">${escapeHtml(own.ai.content)} <i>(เรียบเรียงโดย AI)</i></p>` : ''}
+        ${orderedRecommendations(own.recommendations, own.ai?.ranking).map((item) => `
+          <div class="pr-rec"><b>${item.aiRank ? `${item.aiRank}. ` : ''}${escapeHtml(item.title)}</b><p>${escapeHtml(item.detail)}${
+            item.aiReason ? `<br><i>เหตุผลของลำดับ (AI): ${escapeHtml(item.aiReason)}</i>` : ''}</p></div>`).join('')}
+      </div>`);
+  }
+
   if (recommendations?.length) {
     sections.push(`
       <div class="pr-section">
-        <h2>ข้อเสนอแนะเชิงกลยุทธ์</h2>
-        ${recommendations.slice(0, 6).map((item) => `
+        <h2>ข้อเสนอแนะเชิงกลยุทธ์${state.aiSummary?.ranking?.length ? ' (AI จัดลำดับความเร่งด่วนจากคำแนะนำที่ระบบสร้าง)' : ''}</h2>
+        ${orderedRecommendations(recommendations).slice(0, 6).map((item) => `
           <div class="pr-rec">
-            <b>${escapeHtml(item.title)}</b>
-            <p>${escapeHtml(item.detail)}</p>
+            <b>${item.aiRank ? `${item.aiRank}. ` : ''}${escapeHtml(item.title)}</b>
+            <p>${escapeHtml(item.detail)}${item.aiReason ? `<br><i>เหตุผลของลำดับ (AI): ${escapeHtml(item.aiReason)}</i>` : ''}</p>
             <cite>${escapeHtml(item.signal)} · ${escapeHtml(item.source)}${
               item.assumption ? ` · สมมติฐาน: ${escapeHtml(item.assumption)}` : ''
             }</cite>
@@ -1202,18 +1594,20 @@ function buildReport({ summary, sources, forecast, impact, micro, recommendation
       </div>`);
   }
 
-  sections.push(`
-    <div class="pr-section">
-      <h2>แหล่งข้อมูลและเวลานำเข้าล่าสุด</h2>
-      ${reportTable(
-        [{ label: 'ชุดข้อมูล' }, { label: 'จำนวนระเบียน', num: true }, { label: 'นำเข้าล่าสุด' }],
-        sources.map((source) => [
-          escapeHtml(source.name),
-          source.records ? numberFormat.format(source.records) : '—',
-          escapeHtml(source.last_imported_at || 'ยังไม่นำเข้า'),
-        ])
-      )}
-    </div>`);
+  if (sources) {
+    sections.push(`
+      <div class="pr-section">
+        <h2>แหล่งข้อมูลและเวลานำเข้าล่าสุด</h2>
+        ${reportTable(
+          [{ label: 'ชุดข้อมูล' }, { label: 'จำนวนระเบียน', num: true }, { label: 'นำเข้าล่าสุด' }],
+          sources.map((source) => [
+            escapeHtml(source.name),
+            source.records ? numberFormat.format(source.records) : '—',
+            escapeHtml(source.last_imported_at || 'ยังไม่นำเข้า'),
+          ])
+        )}
+      </div>`);
+  }
 
   const caveats = [...(forecast?.caveats || []), ...(impact?.caveats || []), ...(micro?.caveats || [])];
   sections.push(`
@@ -1231,12 +1625,14 @@ document.querySelector('#export-btn').addEventListener('click', async () => {
   button.disabled = true;
   button.innerHTML = '<span>◷</span> กำลังสร้างรายงาน...';
   try {
+    // ขอเฉพาะส่วนที่บทบาทนี้มีสิทธิ์ ส่วนที่ไม่มีสิทธิ์จะไม่อยู่ในรายงาน ถ้าขอทุกอย่างตรง ๆ
+    // 403 ตัวเดียวจะทำให้ทั้งรายงานล้ม (ผู้ประกอบการไม่มีสิทธิ์ดูแหล่งข้อมูล จึงเคยออกรายงานไม่ได้เลย)
     const [summary, sources, forecast, impact, recommendations] = await Promise.all([
-      api('/api/summary'),
-      api('/api/sources'),
-      api('/api/forecast/tourism?months=6'),
-      api('/api/impact'),
-      api('/api/recommendations'),
+      fetchIf('view:overview', '/api/summary'),
+      fetchIf('view:sources', '/api/sources'),
+      fetchIf('view:forecast', '/api/forecast/tourism?months=6'),
+      fetchIf('view:forecast', '/api/impact'),
+      fetchIf('view:recommendations', '/api/recommendations'),
     ]);
     // กราฟในหน้าที่ซ่อนอยู่มีขนาด 0 แปลงเป็นรูปลงรายงานไม่ได้ จึงสลับไปหน้าพยากรณ์ให้กราฟวาดตามขนาดจริงก่อน
     // ทั้งหมดเกิดในจังหวะเดียวก่อนเบราว์เซอร์วาดจอ ผู้ใช้จึงไม่เห็นหน้ากระพริบ

@@ -5,7 +5,7 @@
 แนวคิดที่ใช้:
 - ข้อมูลนักท่องเที่ยวมีเพียง 48 เดือน (4 ฤดูกาล) และรูปแบบฤดูกาลยังไม่คงที่เพราะเพิ่งฟื้นจากโควิด
   (ปี 2022 เดือนพีคสูงกว่าค่าเฉลี่ยถึง 69% แต่ปี 2025 เหลือ 18%) จึงไม่ยึดวิธีใดวิธีหนึ่งไว้ล่วงหน้า
-- ระบบเทียบหลายวิธีตั้งแต่ง่ายสุดจนถึง Holt-Winters แล้ว "เลือกวิธีจากปีตรวจสอบ" และ
+- ระบบเทียบหลายวิธีตั้งแต่ง่ายสุด Holt-Winters จนถึงโมเดล Machine Learning แล้ว "เลือกวิธีจากปีตรวจสอบ" และ
   "รายงานความแม่นจากปีทดสอบที่ไม่ถูกใช้เลือกวิธี" เพื่อไม่ให้ตัวเลขความแม่นสวยเกินจริง
 - การวิเคราะห์ผลกระทบเป็นความสัมพันธ์ (association) ไม่ใช่เหตุและผล เพราะฝนกับโลว์ซีซันเกิดพร้อมกัน
   จึงตัดฤดูกาลและแนวโน้มออกก่อนเสมอ
@@ -211,6 +211,115 @@ def holt_winters_forecast(train: Sequence[float], horizon: int) -> list[float]:
 
 Method = Callable[[Sequence[float], int], list[float]]
 
+# ---- Machine Learning: ridge regression ที่เรียนตัวคูณของแต่ละเดือนจากฤดูกาลและวันหยุด ----
+
+# ความแรงของ regularization ที่ลอง เลือกค่าที่ทายแถวที่ถูกกันออกได้ดีที่สุด (leave-one-out)
+RIDGE_PENALTIES = (0.01, 0.1, 0.3, 1.0, 3.0, 10.0, 30.0, 100.0)
+
+
+def _solve(matrix: list[list[float]], vector: list[float]) -> list[float]:
+    """แก้ระบบสมการเชิงเส้นด้วย Gauss-Jordan (เมทริกซ์ที่ใช้มีแค่ 5x5)"""
+    size = len(vector)
+    rows = [row[:] + [vector[index]] for index, row in enumerate(matrix)]
+    for column in range(size):
+        pivot = max(range(column, size), key=lambda row: abs(rows[row][column]))
+        rows[column], rows[pivot] = rows[pivot], rows[column]
+        if not rows[column][column]:
+            continue
+        for row in range(size):
+            if row != column:
+                factor = rows[row][column] / rows[column][column]
+                rows[row] = [value - factor * pivot_value for value, pivot_value in zip(rows[row], rows[column])]
+    return [rows[index][size] / rows[index][index] if rows[index][index] else 0.0 for index in range(size)]
+
+
+# น้ำหนักของข้อมูลลดลงครึ่งหนึ่งทุก 12 เดือนที่ย้อนไป รูปฤดูกาลของปีฟื้นโควิด (2022-2023) แรงผิดปกติและอ่อนลงทุกปี
+# ถ้าให้ทุกปีหนักเท่ากัน โมเดลจะทายฤดูกาลแรงเกินจริง ตั้งค่านี้จากเหตุผล ไม่ได้ปรับหาค่าที่ทำให้ปีทดสอบสวย
+RECENCY_HALF_LIFE_MONTHS = 12
+
+
+def ridge_fit(features: list[list[float]], targets: list[float], weights: list[float], penalty: float) -> Callable[[list[float]], float]:
+    """ฝึก ridge regression แบบถ่วงน้ำหนัก คืนฟังก์ชันทำนาย ปรับสเกล feature ก่อน เพื่อให้ penalty กดทุกตัวแปรเท่ากัน"""
+    width, total = len(features[0]), sum(weights)
+    centers = [sum(weight * row[column] for weight, row in zip(weights, features)) / total for column in range(width)]
+    scales = [
+        math.sqrt(sum(weight * (row[column] - centers[column]) ** 2 for weight, row in zip(weights, features)) / total) or 1.0
+        for column in range(width)
+    ]
+    scaled = [[(row[column] - centers[column]) / scales[column] for column in range(width)] for row in features]
+    target_mean = sum(weight * target for weight, target in zip(weights, targets)) / total
+    gram = [
+        [sum(weight * row[i] * row[j] for weight, row in zip(weights, scaled)) + (penalty if i == j else 0.0) for j in range(width)]
+        for i in range(width)
+    ]
+    solution = _solve(gram, [
+        sum(weight * row[i] * (target - target_mean) for weight, row, target in zip(weights, scaled, targets)) for i in range(width)
+    ])
+    return lambda row: target_mean + sum(
+        coefficient * (value - center) / scale for coefficient, value, center, scale in zip(solution, row, centers, scales)
+    )
+
+
+def ridge_fit_cv(features: list[list[float]], targets: list[float], weights: list[float]) -> Callable[[list[float]], float]:
+    """เลือก penalty ด้วย leave-one-out แล้วฝึกใหม่ด้วยข้อมูลทั้งหมด ไม่แตะข้อมูลนอกชุดฝึกที่ส่งเข้ามา"""
+    best_penalty, best_error = RIDGE_PENALTIES[0], None
+    for penalty in RIDGE_PENALTIES:
+        error = 0.0
+        for held_out in range(len(targets)):
+            keep = lambda values: values[:held_out] + values[held_out + 1:]
+            model = ridge_fit(keep(features), keep(targets), keep(weights), penalty)
+            # แถวที่ใหม่กว่านับความผิดพลาดหนักกว่า ตามน้ำหนักเดียวกับตอนฝึก
+            error += weights[held_out] * (model(features[held_out]) - targets[held_out]) ** 2
+        if best_error is None or error < best_error:
+            best_penalty, best_error = penalty, error
+    return ridge_fit(features, targets, weights, best_penalty)
+
+
+def ml_forecasters(first_month: str, holidays_by_month: dict[str, int]) -> dict[str, tuple[str, Method]]:
+    """สร้างวิธีพยากรณ์แบบ ML ที่ผูกกับปฏิทินของอนุกรมนี้ คืนในรูปเดียวกับ METHODS เพื่อเข้าแข่งด้วยกติกาเดียวกัน
+
+    first_month คือป้าย YYYY-MM ของจุดแรกในอนุกรม ต้องรู้เพราะวันหยุดผูกกับเดือนจริงในปฏิทิน ไม่ใช่ตำแหน่งในลิสต์
+    โมเดลไม่ได้ทำนายจำนวนคนตรง ๆ แต่ทำนายว่าเดือนนั้นจะต่างจากค่าเฉลี่ย 12 เดือนก่อนหน้ากี่เท่า (ใน log)
+    จาก feature ที่รู้ล่วงหน้าได้จริง คือตำแหน่งของเดือนในรอบปี (ฮาร์มอนิก 2 คู่) และจำนวนวันหยุดราชการของเดือนนั้น
+    ข้อมูลเดือนที่ใหม่กว่ามีน้ำหนักมากกว่า (ดู RECENCY_HALF_LIFE_MONTHS)
+    แล้วคูณกลับด้วยระดับ 12 เดือนล่าสุด จึงไม่วิ่งตามแนวโน้มขาขึ้นของช่วงฟื้นจากโควิดแบบที่ Holt-Winters พลาด
+    """
+    start = int(first_month[:4]) * MONTHS_IN_YEAR + int(first_month[5:7]) - 1
+
+    def features(position: int) -> list[float]:
+        absolute = start + position
+        angle = 2 * math.pi * (absolute % MONTHS_IN_YEAR) / MONTHS_IN_YEAR
+        label = f"{absolute // MONTHS_IN_YEAR:04d}-{absolute % MONTHS_IN_YEAR + 1:02d}"
+        return [math.sin(angle), math.cos(angle), math.sin(2 * angle), math.cos(2 * angle), float(holidays_by_month.get(label, 0))]
+
+    def ridge_forecast(train: Sequence[float], horizon: int) -> list[float]:
+        rows = [
+            position for position in range(MONTHS_IN_YEAR, len(train))
+            if train[position] > 0 and mean(train[position - MONTHS_IN_YEAR:position]) > 0
+        ]
+        # ต้องมีอย่างน้อยหนึ่งปีไว้เป็นระดับตั้งต้น และอีกหนึ่งปีไว้เรียน ไม่งั้นใช้ระดับล่าสุดตรง ๆ
+        if len(rows) < MONTHS_IN_YEAR:
+            return flat_mean_forecast(train, horizon)
+        # ปรับให้น้ำหนักรวมเท่ากับจำนวนแถว จะได้ไม่เปลี่ยนความหมายของ penalty
+        weights = [0.5 ** ((len(train) - 1 - position) / RECENCY_HALF_LIFE_MONTHS) for position in rows]
+        weights = [weight * len(weights) / sum(weights) for weight in weights]
+        model = ridge_fit_cv(
+            [features(position) for position in rows],
+            [math.log(train[position] / mean(train[position - MONTHS_IN_YEAR:position])) for position in rows],
+            weights,
+        )
+        level = mean(train[-MONTHS_IN_YEAR:])
+        return [level * math.exp(model(features(len(train) + step))) for step in range(horizon)]
+
+    def blend_forecast(train: Sequence[float], horizon: int) -> list[float]:
+        return [(learned + flat) / 2 for learned, flat in zip(ridge_forecast(train, horizon), flat_mean_forecast(train, horizon))]
+
+    return {
+        "ml_ridge": ("Ridge regression จากฤดูกาลและวันหยุด", ridge_forecast),
+        "ml_blend": ("ผสม ML กับค่าเฉลี่ย 12 เดือนล่าสุด", blend_forecast),
+    }
+
+
 METHODS: dict[str, tuple[str, Method]] = {
     "flat_mean": ("ค่าเฉลี่ย 12 เดือนล่าสุด", flat_mean_forecast),
     "damped_seasonal": ("ระดับล่าสุด x ฤดูกาลครึ่งแรง", damped_seasonal_forecast),
@@ -224,11 +333,12 @@ METHODS: dict[str, tuple[str, Method]] = {
 MINIMUM_MONTHS = 4 * MONTHS_IN_YEAR
 
 
-def compare_methods(series: Sequence[float], test_size: int = MONTHS_IN_YEAR) -> list[dict]:
+def compare_methods(series: Sequence[float], test_size: int = MONTHS_IN_YEAR,
+                    methods: Optional[dict[str, tuple[str, Method]]] = None) -> list[dict]:
     """ฝึกด้วยข้อมูลก่อนช่วงทดสอบ แล้ววัดว่าแต่ละวิธีทายช่วงทดสอบได้คลาดเคลื่อนกี่เปอร์เซ็นต์"""
     train, test = list(series[:-test_size]), list(series[-test_size:])
     results = []
-    for key, (label, method) in METHODS.items():
+    for key, (label, method) in (methods or METHODS).items():
         error = mape(test, method(train, test_size))
         results.append({"method": key, "label": label, "mape_percent": round(error, 2) if error is not None else None})
     return sorted(results, key=lambda item: item["mape_percent"] if item["mape_percent"] is not None else 999)
@@ -244,20 +354,62 @@ def _relative_errors(series: Sequence[float], method: Method, window: int) -> li
     return errors
 
 
-def forecast_series(series: Sequence[float], horizon: int) -> dict:
-    """เลือกวิธีพยากรณ์จากปีตรวจสอบ รายงานความแม่นจากปีทดสอบ แล้วพยากรณ์อนาคตด้วยข้อมูลทั้งหมด"""
+def rolling_ranking(series: Sequence[float], methods: dict[str, tuple[str, Method]],
+                    window: int = MONTHS_IN_YEAR) -> list[dict]:
+    """วัดแต่ละวิธีโดยเลื่อนจุดตัดไปทีละเดือนตลอด window เดือนสุดท้าย แต่ละจุดตัดทายทุกเดือนที่เหลือจนสิ้นช่วง
+
+    ได้ 78 การทายต่อวิธี (12 + 11 + ... + 1) แทน 12 การทายของการตัดครั้งเดียวใน compare_methods
+    ใกล้การใช้งานจริงที่มีข้อมูลเข้าทุกเดือนมากกว่า จึงรายงานคู่กับการตัดครั้งเดียว
+
+    ไม่ได้ใช้เลือกวิธี: เคยทดลองใช้แล้ววิธีที่ชนะปีตรวจสอบแบบนี้ ("เดือนเดียวกันปีก่อน") กลับแพ้เกือบทุกวิธีในปีทดสอบ
+    และให้ช่วงประมาณกว้างจนใช้ไม่ได้ การทายทั้ง 78 ครั้งมาจากปีเดียวกัน ความผิดพลาดจึงไปทางเดียวกัน
+    ไม่ได้เป็นหลักฐานอิสระ 78 ชิ้น ปัญหาจริงคือมีปีตรวจสอบปีเดียว ซึ่งการวัดถี่ขึ้นแก้ไม่ได้
+    """
+    results = []
+    for key, (label, method) in methods.items():
+        errors = []
+        for origin in range(len(series) - window, len(series)):
+            prediction = method(list(series[:origin]), len(series) - origin)
+            errors.extend(abs(actual - value) / actual for actual, value in zip(series[origin:], prediction) if actual)
+        results.append({"method": key, "label": label, "mape_percent": round(100 * mean(errors), 2) if errors else None})
+    return sorted(results, key=lambda item: item["mape_percent"] if item["mape_percent"] is not None else 999)
+
+
+def forecast_series(series: Sequence[float], horizon: int,
+                    extra_methods: Optional[dict[str, tuple[str, Method]]] = None) -> dict:
+    """เลือกวิธีพยากรณ์จากปีตรวจสอบ รายงานความแม่นจากปีทดสอบ แล้วพยากรณ์อนาคตด้วยข้อมูลทั้งหมด
+
+    extra_methods คือวิธีที่ต้องรู้ปฏิทินของอนุกรม (ดู ml_forecasters) เข้าแข่งด้วยกติกาเดียวกับวิธีใน METHODS ทุกประการ
+    "alternative" คือวิธีที่ดีที่สุดของอีกกลุ่มหนึ่ง (ถ้าวิธีหลักเป็น ML จะเป็นวิธีสถิติที่ดีที่สุด และกลับกัน)
+    พร้อมผลพยากรณ์ของมัน ใช้แสดงเทียบกับวิธีหลักให้เห็นว่าสองแนวทางทายต่างกันแค่ไหน
+    """
     if len(series) < MINIMUM_MONTHS:
         return {"error": f"ต้องมีข้อมูลอย่างน้อย {MINIMUM_MONTHS} เดือน แต่มี {len(series)} เดือน"}
+    methods = {**METHODS, **(extra_methods or {})}
+    without_test = series[:-MONTHS_IN_YEAR]
 
     # ปีตรวจสอบ = 12 เดือนก่อนปีทดสอบ ใช้เลือกวิธีเท่านั้น ไม่แตะปีทดสอบ
-    validation = compare_methods(series[:-MONTHS_IN_YEAR])
+    validation = compare_methods(without_test, methods=methods)
     chosen_key = validation[0]["method"]
-    label, method = METHODS[chosen_key]
+    label, method = methods[chosen_key]
 
     # ปีทดสอบ = 12 เดือนสุดท้าย ไม่ถูกใช้เลือกวิธี ตัวเลขนี้จึงเป็นความแม่นที่รายงานได้จริง
-    test = compare_methods(series)
-    chosen_test = next(item for item in test if item["method"] == chosen_key)
-    baseline_test = next(item for item in test if item["method"] == "seasonal_naive")
+    # รายงานสองแบบ: ทายทั้งปีล่วงหน้าจากสิ้นปีก่อน (ยากสุด) และเลื่อนจุดตัดทีละเดือน (ใกล้การใช้งานจริงที่มีข้อมูลเข้าทุกเดือน)
+    test = compare_methods(series, methods=methods)
+    test_rolling = rolling_ranking(series, methods)
+    score = lambda ranking, key: next(item["mape_percent"] for item in ranking if item["method"] == key)
+    validation_rolling = rolling_ranking(without_test, methods)
+    comparison = [
+        {
+            "method": item["method"], "label": item["label"],
+            "is_chosen": item["method"] == chosen_key, "is_ml": item["method"].startswith("ml_"),
+            "validation_mape_percent": item["mape_percent"],
+            "validation_rolling_mape_percent": score(validation_rolling, item["method"]),
+            "test_mape_percent": score(test, item["method"]),
+            "test_rolling_mape_percent": score(test_rolling, item["method"]),
+        }
+        for item in validation
+    ]
 
     errors = _relative_errors(series, method, MONTHS_IN_YEAR)
     relative_sd = standard_deviation(errors) if len(errors) > 1 else None
@@ -273,18 +425,30 @@ def forecast_series(series: Sequence[float], horizon: int) -> dict:
             "upper": round(value + margin) if margin else None,
         })
 
+    uses_ml = chosen_key.startswith("ml_")
+    alternative = next((item for item in comparison if item["is_ml"] != uses_ml), None)
     return {
         "points": points,
-        "model": {"method": chosen_key, "label": label, "selected_by": "ความแม่นในปีตรวจสอบ (ไม่ใช้ปีทดสอบ)"},
+        "model": {
+            "method": chosen_key, "label": label,
+            "selected_by": "ความแม่นในปีตรวจสอบ (ไม่ใช้ปีทดสอบ)",
+            "uses_ml": uses_ml,
+        },
+        "alternative": {
+            **alternative,
+            "points": [{"step": step, "visitors": round(value)}
+                       for step, value in enumerate(methods[alternative["method"]][1](list(series), horizon), start=1)],
+        } if alternative else None,
+        "comparison": comparison,
         "accuracy": {
             "validation_year_ranking": validation,
             "test_year_ranking": test,
-            "test_mape_percent": chosen_test["mape_percent"],
-            "seasonal_naive_mape_percent": baseline_test["mape_percent"],
+            "test_mape_percent": score(test, chosen_key),
+            "test_rolling_mape_percent": score(test_rolling, chosen_key),
+            "seasonal_naive_mape_percent": score(test, "seasonal_naive"),
             "beats_baseline": bool(
-                chosen_test["mape_percent"] is not None
-                and baseline_test["mape_percent"] is not None
-                and chosen_test["mape_percent"] <= baseline_test["mape_percent"]
+                score(test, chosen_key) is not None and score(test, "seasonal_naive") is not None
+                and score(test, chosen_key) <= score(test, "seasonal_naive")
             ),
             "one_step_mape_percent": round(100 * mean([abs(error) for error in errors]), 2) if errors else None,
             "interval_note": "ช่วงประมาณ = พยากรณ์ ± 1.96 x ส่วนเบี่ยงเบนของความคลาดเคลื่อนสัมพัทธ์ x sqrt(เดือนข้างหน้า)",
@@ -372,6 +536,16 @@ def pm25_impact(visitor_index: Sequence[float], monthly_pm25: Sequence[float], m
         {"month": month, "pm25": round(value, 2), "pm25_anomaly": round(delta, 2), "visitor_index": round(index, 3)}
         for month, value, delta, index in zip(months, monthly_pm25, pm25, visitor_index)
     ]
+    return result
+
+
+def tourism_link(business_index: Sequence[float], visitor_index: Sequence[float]) -> dict:
+    """ความสัมพันธ์ระหว่างรายได้ของธุรกิจกับจำนวนนักท่องเที่ยวของเมือง ทั้งสองฝั่งตัดฤดูกาลและแนวโน้มออกแล้ว
+
+    ถ้าไม่ตัดออกก่อน สองอนุกรมที่มีไฮซีซันตรงกันจะดูสัมพันธ์กันเสมอ แม้ลูกค้าจะเป็นคนละกลุ่ม
+    """
+    result = _impact(list(business_index), list(visitor_index), unit_scale=0.1)
+    result["effect_unit"] = "% ต่อนักท่องเที่ยวที่มากกว่าที่คาด 10%"
     return result
 
 

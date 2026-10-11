@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 
 from scripts import import_csv, import_excel, refresh_data
 
-from . import analytics, auth
+from . import ai_summary, analytics, auth, business
 from .database import close_pool, get_pool, initialize_database
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -1030,7 +1030,7 @@ def tourism_forecast(months: int = Query(default=6, ge=1, le=12),
         return {"error": "ยังไม่มีข้อมูลนักท่องเที่ยวในฐานข้อมูล", "caveats": FORECAST_CAVEATS}
     result = cached_analysis(
         f"forecast:{months}:{len(series)}:{labels[-1]}",
-        lambda: analytics.forecast_series(series, months),
+        lambda: analytics.forecast_series(series, months, analytics.ml_forecasters(labels[0], holiday_days_by_month())),
     )
     if "error" in result:
         return {"error": result["error"], "caveats": FORECAST_CAVEATS}
@@ -1051,12 +1051,34 @@ def tourism_forecast(months: int = Query(default=6, ge=1, le=12),
         "history": [{"month": month, "visitors": round(value)} for month, value in zip(labels, series)],
         "forecast": [{"month": shift_month(labels[-1], point["step"]), **point} for point in result["points"]],
         "model": result["model"],
+        "alternative": {
+            **{key: value for key, value in result["alternative"].items() if key != "points"},
+            "forecast": [{"month": shift_month(labels[-1], point["step"]), "visitors": point["visitors"]}
+                         for point in result["alternative"]["points"]],
+        } if result["alternative"] else None,
+        "comparison": result["comparison"],
         "accuracy": result["accuracy"],
         "seasonal_profile": profile,
         "data": {"last_month": labels[-1], "months_behind_today": lag, "months_available": len(series)},
         "caveats": caveats,
         "source": FORECAST_SOURCE,
     }
+
+
+def monthly_rain() -> dict[str, float]:
+    """ปริมาณฝนรวมรายเดือน (มม.) คีย์เป็นป้ายเดือน YYYY-MM"""
+    return {row["month"]: float(row["rain_mm"] or 0) for row in query(
+        """SELECT to_char(date, 'YYYY-MM') AS month, SUM(precipitation_mm) AS rain_mm
+           FROM weather_daily GROUP BY 1"""
+    )}
+
+
+def holiday_days_by_month() -> dict[str, int]:
+    """จำนวนวันหยุดราชการรายเดือน คีย์เป็นป้ายเดือน YYYY-MM"""
+    return {row["month"]: row["days"] for row in query(
+        f"""SELECT to_char(date, 'YYYY-MM') AS month, COUNT(*) AS days
+            FROM public_holidays WHERE {PUBLIC_HOLIDAY_ONLY} GROUP BY 1"""
+    )}
 
 
 def impact_analysis() -> dict:
@@ -1066,14 +1088,8 @@ def impact_analysis() -> dict:
         return {"error": "ข้อมูลนักท่องเที่ยวน้อยกว่า 24 เดือน ยังวิเคราะห์ผลกระทบไม่ได้", "caveats": IMPACT_CAVEATS}
 
     visitor_index = analytics.deseasonalized_index(series)
-    rain_by_month = {row["month"]: float(row["rain_mm"] or 0) for row in query(
-        """SELECT to_char(date, 'YYYY-MM') AS month, SUM(precipitation_mm) AS rain_mm
-           FROM weather_daily GROUP BY 1"""
-    )}
-    holidays_by_month = {row["month"]: row["days"] for row in query(
-        f"""SELECT to_char(date, 'YYYY-MM') AS month, COUNT(*) AS days
-            FROM public_holidays WHERE {PUBLIC_HOLIDAY_ONLY} GROUP BY 1"""
-    )}
+    rain_by_month = monthly_rain()
+    holidays_by_month = holiday_days_by_month()
 
     rain_months = [(month, index) for month, index in zip(labels, visitor_index) if month in rain_by_month]
     rain = analytics.rain_impact(
@@ -1147,7 +1163,10 @@ def _weather_signal() -> Optional[dict]:
 
 @app.get("/api/recommendations")
 def recommendations(_: dict = Depends(auth.require("view:recommendations"))) -> list[dict]:
-    """คำแนะนำที่อนุมานจากสัญญาณข้อมูลจริง ทุกข้อระบุตัวเลขและแหล่งที่มาที่ใช้ตัดสิน"""
+    """คำแนะนำที่อนุมานจากสัญญาณข้อมูลจริง ทุกข้อระบุตัวเลขและแหล่งที่มาที่ใช้ตัดสิน
+
+    key คือชื่อคงที่ของกฎแต่ละข้อ (หัวข้อเปลี่ยนตามข้อมูล) ใช้จับคู่กับลำดับที่ AI จัดไว้
+    """
     results: list[dict] = []
 
     forecast = tourism_forecast(months=6)
@@ -1168,6 +1187,7 @@ def recommendations(_: dict = Depends(auth.require("view:recommendations"))) -> 
                 else "ยังไม่ต้องปรับกำลังคน เพราะเปลี่ยนแปลงน้อยกว่าความคลาดเคลื่อนของแบบจำลอง"
             )
             results.append({
+                "key": "staffing",
                 "title": f"วางแผนกำลังคนเดือน {next_month['month']} (เดือนถัดจากข้อมูลล่าสุด)",
                 "detail": (
                     f"พยากรณ์ {next_month['visitors']:,} คน เทียบเดือนเดียวกันปีก่อนที่ {baseline:,} คน "
@@ -1180,6 +1200,7 @@ def recommendations(_: dict = Depends(auth.require("view:recommendations"))) -> 
         if next_month.get("upper"):
             buffer_percent = (next_month["upper"] / next_month["visitors"] - 1) * 100
             results.append({
+                "key": "stock",
                 "title": f"เตรียมสต็อกเดือน {next_month['month']} ให้รองรับถึง {next_month['upper']:,} คน",
                 "detail": (
                     f"ค่าพยากรณ์อยู่ที่ {next_month['visitors']:,} คน แต่ขอบบนของช่วงประมาณ 95% คือ "
@@ -1193,6 +1214,7 @@ def recommendations(_: dict = Depends(auth.require("view:recommendations"))) -> 
         if profile:
             peak_month = max(profile, key=lambda month_id: profile[month_id])
             results.append({
+                "key": "season_peak",
                 "title": f"เดือน{THAI_MONTH_NAMES[peak_month - 1]}เป็นเดือนที่คนมากที่สุดตามรูปฤดูกาล",
                 "detail": (
                     f"เฉลี่ย 4 ปีที่ผ่านมา สูงกว่าค่าเฉลี่ยทั้งปี {(profile[peak_month] - 1) * 100:.0f}% "
@@ -1205,6 +1227,7 @@ def recommendations(_: dict = Depends(auth.require("view:recommendations"))) -> 
     lag = forecast.get("data", {}).get("months_behind_today", 0)
     if lag >= 2:
         results.append({
+            "key": "stale_data",
             "title": f"ข้อมูลนักท่องเที่ยวค้างอยู่ที่เดือน {forecast['data']['last_month']}",
             "detail": (
                 f"ช้ากว่าปัจจุบัน {lag} เดือน คำแนะนำทั้งหมดที่อิงการพยากรณ์จึงเป็นการต่อยอดจากข้อมูลเก่า "
@@ -1231,6 +1254,7 @@ def recommendations(_: dict = Depends(auth.require("view:recommendations"))) -> 
             )
             title = "ยังสรุปผลของฝนต่อจำนวนนักท่องเที่ยวไม่ได้"
         results.append({
+            "key": "rain_impact",
             "title": title,
             "detail": detail,
             "signal": "ผลกระทบจากฝน",
@@ -1247,6 +1271,7 @@ def recommendations(_: dict = Depends(auth.require("view:recommendations"))) -> 
     )
     for row in busiest:
         results.append({
+            "key": f"traffic:{row['intersection_name']}",
             "title": f"จัดการจราจรและจุดบริการที่{row['intersection_name']}",
             "detail": f"ปริมาณรถสะสมปีล่าสุด {row['vehicle_volume']:,} คัน สูงติดอันดับต้นของเมือง",
             "signal": "ปริมาณรถสูง",
@@ -1262,6 +1287,7 @@ def recommendations(_: dict = Depends(auth.require("view:recommendations"))) -> 
     )
     if peak_month:
         results.append({
+            "key": "peak_month",
             "title": f"เตรียมกำลังรับช่วงพีคเดือน{peak_month['month_name']}",
             "detail": (
                 f"เดือน{peak_month['month_name']} {peak_month['calendar_year']} "
@@ -1276,6 +1302,7 @@ def recommendations(_: dict = Depends(auth.require("view:recommendations"))) -> 
         upcoming = weather["holidays_ahead"][0]
         rain = upcoming["precipitation_probability_percent"] or 0
         results.append({
+            "key": "holiday_ahead",
             "title": f"วันหยุด{upcoming['holiday']} ({upcoming['date']})",
             "detail": (
                 f"พยากรณ์ฝน {rain}% อุณหภูมิสูงสุด {upcoming['temperature_max_c']}°C "
@@ -1287,6 +1314,7 @@ def recommendations(_: dict = Depends(auth.require("view:recommendations"))) -> 
     if weather and weather["rainy_days"]:
         days = weather["rainy_days"]
         results.append({
+            "key": "rainy_week",
             "title": f"มีวันฝนตกหนัก {len(days)} วันใน 7 วันข้างหน้า",
             "detail": "วันที่ " + ", ".join(day["date"] for day in days) + " ควรสื่อสารกิจกรรมในร่มล่วงหน้า",
             "signal": "สภาพอากาศ",
@@ -1299,6 +1327,7 @@ def recommendations(_: dict = Depends(auth.require("view:recommendations"))) -> 
     )
     if dense:
         results.append({
+            "key": "business_mix",
             "title": f"ธุรกิจกลุ่ม {dense[0]['category']} หนาแน่นที่สุด ({dense[0]['total']:,} แห่ง)",
             "detail": "ใช้เป็นฐานกำหนดมาตรการดูแลนักท่องเที่ยวและการกระจายกิจกรรมกลางคืน",
             "signal": "โครงสร้างธุรกิจ",
@@ -1398,6 +1427,380 @@ def air_quality(_: dict = Depends(auth.require("view:overview"))) -> dict:
         ),
         "source": AIR_QUALITY_SOURCE,
     }
+
+
+# ---------------------------------------------------------------- พฤติกรรมการเดินทาง
+
+MAINLAND_PIER = "พัทยา"
+REVENUE_SOURCE = "Open Data เมืองพัทยา ชุดข้อมูลรายได้จากการจัดเก็บภาษีและค่าธรรมเนียมต่าง ๆ (91)"
+
+
+@app.get("/api/behavior")
+def travel_behavior(_: dict = Depends(auth.require("view:overview"))) -> dict:
+    """รูปแบบการเดินทางของนักท่องเที่ยวเกาะล้าน: เดินทางช่วงไหนของปี ขึ้นลงท่าไหน และเลือกเรือประเภทใด
+
+    เป็นพฤติกรรมระดับกลุ่มที่อ่านได้จากยอดรวมรายเดือน ไม่ใช่การติดตามนักท่องเที่ยวรายคน
+    """
+    labels, series = monthly_tourism_series()
+    seasonality = []
+    if len(series) >= 2 * analytics.MONTHS_IN_YEAR:
+        first_month = int(labels[0][5:7])
+        seasonality = sorted(
+            ({"month_id": (first_month - 1 + position) % 12 + 1, "index": round(value, 3)}
+             for position, value in enumerate(analytics.seasonal_indices(series))),
+            key=lambda item: item["month_id"],
+        )
+
+    routes = query(
+        """SELECT route_name, boat_type_name, SUM(number_of_passengers) AS passengers, SUM(number_of_trips) AS trips
+           FROM boat_passengers_monthly GROUP BY 1, 2"""
+    )
+    # เส้นทางตั้งชื่อเป็น "ต้นทาง-ปลายทาง" จึงแยกได้ว่าแต่ละท่าบนเกาะมีคนขึ้นเกาะ (ขาไป) และออกจากเกาะ (ขากลับ) เท่าไร
+    piers: dict[str, dict] = {}
+    for route in routes:
+        ends = [part.strip() for part in route["route_name"].split("-")]
+        if len(ends) != 2 or MAINLAND_PIER not in ends or ends[0] == ends[1]:
+            continue
+        island_pier = ends[1] if ends[0] == MAINLAND_PIER else ends[0]
+        pier = piers.setdefault(island_pier, {"pier": island_pier, "arrivals": 0, "departures": 0})
+        pier["arrivals" if ends[0] == MAINLAND_PIER else "departures"] += route["passengers"]
+    pier_list = sorted(piers.values(), key=lambda pier: -(pier["arrivals"] + pier["departures"]))
+
+    types: dict[str, dict] = {}
+    for route in routes:
+        boat = types.setdefault(route["boat_type_name"], {"boat_type_name": route["boat_type_name"], "passengers": 0, "trips": 0})
+        boat["passengers"] += route["passengers"]
+        boat["trips"] += route["trips"]
+    total = sum(boat["passengers"] for boat in types.values()) or 1
+    for boat in types.values():
+        boat["share_percent"] = round(boat["passengers"] / total * 100, 1)
+        boat["passengers_per_trip"] = round(boat["passengers"] / boat["trips"]) if boat["trips"] else None
+
+    insights = []
+    if seasonality:
+        peak = max(seasonality, key=lambda item: item["index"])
+        low = min(seasonality, key=lambda item: item["index"])
+        insights.append(
+            f"นักท่องเที่ยวมาเกาะล้านมากที่สุดในเดือน{THAI_MONTH_NAMES[peak['month_id'] - 1]} "
+            f"สูงกว่าค่าเฉลี่ยทั้งปี {(peak['index'] - 1) * 100:.0f}% "
+            f"และน้อยที่สุดในเดือน{THAI_MONTH_NAMES[low['month_id'] - 1]} ต่ำกว่าค่าเฉลี่ย {(1 - low['index']) * 100:.0f}%"
+        )
+    for pier in pier_list:
+        if pier["arrivals"] and pier["departures"]:
+            gap = (pier["departures"] / pier["arrivals"] - 1) * 100
+            insights.append(
+                f"ท่า{pier['pier']}: ขึ้นเกาะที่ท่านี้ {pier['arrivals']:,} คน ออกจากเกาะที่ท่านี้ {pier['departures']:,} คน "
+                f"คนออก{'มากกว่า' if gap > 0 else 'น้อยกว่า'}คนขึ้น {abs(gap):.0f}%"
+            )
+    arrivals = sum(pier["arrivals"] for pier in pier_list)
+    departures = sum(pier["departures"] for pier in pier_list)
+    if arrivals and departures:
+        insights.append(
+            f"รวมทุกท่า เรือโดยสารขากลับมีผู้โดยสาร {departures:,} คน {'มากกว่า' if departures > arrivals else 'น้อยกว่า'}ขาไป "
+            f"{arrivals:,} คน อยู่ {abs(departures / arrivals - 1) * 100:.0f}%"
+        )
+    for boat in sorted(types.values(), key=lambda boat: -boat["passengers"]):
+        insights.append(
+            f"{boat['boat_type_name']}มีผู้โดยสาร {boat['share_percent']}% ของทั้งหมด"
+            + (f" เฉลี่ย {boat['passengers_per_trip']:,} คนต่อเที่ยว" if boat["passengers_per_trip"] else "")
+        )
+    return {
+        "seasonality": seasonality,
+        "piers": pier_list,
+        "boat_types": sorted(types.values(), key=lambda boat: -boat["passengers"]),
+        "insights": insights,
+        "caveats": [
+            "เป็นพฤติกรรมระดับกลุ่มจากยอดรวมรายเดือน ไม่ได้ติดตามนักท่องเที่ยวรายคน จึงบอกไม่ได้ว่าใครไปไหนหรืออยู่นานเท่าไร",
+            "ส่วนต่างระหว่างขาไปกับขากลับอาจมาจากคนที่ไปด้วยเรือเช่าเหมาลำแล้วกลับด้วยเรือโดยสาร หรือจากการบันทึกสองขาที่ไม่ครบเท่ากัน ข้อมูลนี้แยกสองสาเหตุไม่ได้",
+        ],
+        "sources": [FORECAST_SOURCE, BOAT_SOURCE],
+    }
+
+
+@app.get("/api/economy/revenue")
+def city_revenue(_: dict = Depends(auth.require("view:overview"))) -> dict:
+    """รายได้ของเมืองพัทยารายปีงบประมาณ แยกหมวด และรายการที่มากที่สุดของปีล่าสุด"""
+    by_category = query(
+        """SELECT budget_year, category_name, SUM(amount_baht) AS amount_baht
+           FROM city_revenue_yearly GROUP BY 1, 2 ORDER BY 1, 3 DESC"""
+    )
+    years = sorted({row["budget_year"] for row in by_category})
+    totals = {year: sum(row["amount_baht"] for row in by_category if row["budget_year"] == year) for year in years}
+    items = []
+    if years:
+        previous = {row["income_name"]: row["amount_baht"] for row in query(
+            "SELECT income_name, SUM(amount_baht) AS amount_baht FROM city_revenue_yearly WHERE budget_year = %s GROUP BY 1",
+            [years[-1] - 1],
+        )}
+        for row in query(
+            """SELECT income_name, category_name, SUM(amount_baht) AS amount_baht FROM city_revenue_yearly
+               WHERE budget_year = %s GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 8""",
+            [years[-1]],
+        ):
+            before = previous.get(row["income_name"])
+            items.append({**row, "change_percent": round((row["amount_baht"] / before - 1) * 100, 1) if before else None})
+    return {
+        "years": [
+            {
+                "budget_year": year,
+                "total_baht": round(totals[year]),
+                "change_percent": round((totals[year] / totals[year - 1] - 1) * 100, 1) if totals.get(year - 1) else None,
+                "by_category": {row["category_name"]: round(row["amount_baht"]) for row in by_category if row["budget_year"] == year},
+            }
+            for year in years
+        ],
+        "top_items": items,
+        "caveats": [
+            "เป็นรายได้ของเทศบาลเมืองพัทยารายปีงบประมาณ (ต.ค.–ก.ย.) ไม่ใช่รายได้จากการท่องเที่ยวของเมือง และเทียบรายเดือนกับจำนวนนักท่องเที่ยวไม่ได้",
+            "รวมภาษีที่รัฐจัดสรรให้และเงินอุดหนุนทั่วไป ซึ่งไม่ได้ขึ้นกับเศรษฐกิจในเมืองโดยตรง",
+        ],
+        "source": REVENUE_SOURCE,
+    }
+
+
+# ---------------------------------------------------------------- ธุรกิจของฉัน
+
+
+def business_rows(owner_id: int) -> list[dict]:
+    return query(
+        """SELECT calendar_year AS year, month_id AS month, revenue_baht AS revenue, customers
+           FROM business_monthly WHERE owner_id = %s ORDER BY calendar_year, month_id""",
+        [owner_id],
+    )
+
+
+@app.get("/api/business")
+def business_analysis(user: dict = Depends(auth.require("manage:business"))) -> dict:
+    """ผลวิเคราะห์ธุรกิจของผู้ใช้ที่ล็อกอินอยู่เท่านั้น ไม่มีทางขอดูของคนอื่น แม้เป็นผู้ดูแลระบบ"""
+    profile = query_one(
+        """SELECT name, is_sample, source_file, ai_summary,
+                  to_char(uploaded_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD HH24:MI') AS uploaded_at,
+                  to_char(ai_created_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD HH24:MI') AS ai_created_at
+           FROM businesses WHERE owner_id = %s""",
+        [user["id"]],
+    )
+    rows = business_rows(user["id"]) if profile else []
+    if not rows:
+        return {"business": None, "template_header": business.TEMPLATE_HEADER}
+    stored = profile.pop("ai_summary")
+    ai_created_at = profile.pop("ai_created_at")
+    labels, series = monthly_tourism_series()
+    visitor_index = dict(zip(labels, analytics.deseasonalized_index(series))) if len(series) >= 2 * analytics.MONTHS_IN_YEAR else {}
+    today = datetime.now(timezone(timedelta(hours=7)))
+    # การเลือกวิธีพยากรณ์แบบเลื่อนจุดตัดใช้เวลาหลายวินาที เก็บผลไว้จนกว่าจะอัปโหลดข้อมูลชุดใหม่หรือข้อมูลเมืองเปลี่ยน
+    analysis = cached_analysis(
+        f"business:{user['id']}:{profile['uploaded_at']}:{len(rows)}:{len(series)}:{today:%Y-%m}",
+        lambda: business.analyze(rows, dict(zip(labels, series)), visitor_index, monthly_rain(), holiday_days_by_month(), f"{today:%Y-%m}"),
+    )
+    return {
+        "business": profile,
+        "ai_enabled": bool(ai_summary.api_key()),
+        "ai": {**json.loads(stored), "created_at": ai_created_at} if stored else None,
+        **analysis,
+        "caveats": [
+            "นักท่องเที่ยวที่ใช้เทียบคือผู้เดินทางลงเกาะล้าน ไม่ใช่นักท่องเที่ยวทั้งเมืองพัทยา",
+            "ความสัมพันธ์วัดหลังตัดฤดูกาลและแนวโน้มออกแล้ว และไม่ใช่การพิสูจน์เหตุและผล",
+            "ข้อมูลธุรกิจถูกส่งให้ AI เฉพาะเมื่อเจ้าของกดปุ่มให้ AI สรุปเอง และไม่อยู่ในบทสรุปผู้บริหารของเมือง",
+        ],
+    }
+
+
+@app.post("/api/business")
+async def business_upload(request: Request, filename: str = Query(...), name: str = Query(...),
+    sample: bool = Query(default=False),
+    user: dict = Depends(auth.require("manage:business")),
+) -> dict:
+    """อัปโหลดไฟล์รายได้รายเดือน แทนที่ข้อมูลเดิมของผู้ใช้คนนี้ทั้งชุด ไฟล์ที่มีแถวผิดจะไม่ถูกบันทึกเลย"""
+    name = name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="ต้องระบุชื่อธุรกิจ")
+    if not filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="รองรับเฉพาะไฟล์ .csv")
+    if int(request.headers.get("content-length") or 0) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="ไฟล์ใหญ่เกินไป")
+    data = await request.body()
+    try:
+        rows = business.parse_upload(data, filename)
+    except import_csv.RowErrors as exc:
+        return {"ok": False, "errors": [{"row_number": line, "error_text": text} for line, text in exc.errors[:50]]}
+    except ValueError as exc:  # ถอดรหัสตัวอักษรของไฟล์ไม่ได้
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    def store() -> None:
+        with get_pool().connection() as connection, connection.transaction():
+            connection.execute("DELETE FROM businesses WHERE owner_id = %s", (user["id"],))
+            connection.execute(
+                "INSERT INTO businesses (owner_id, name, is_sample, source_file) VALUES (%s, %s, %s, %s)",
+                (user["id"], name, sample, Path(filename.replace("\\", "/")).name),
+            )
+            with connection.cursor() as cursor:
+                cursor.executemany(
+                    "INSERT INTO business_monthly (owner_id, calendar_year, month_id, revenue_baht, customers) VALUES (%s, %s, %s, %s, %s)",
+                    [(user["id"], row["year"], row["month"], row["revenue"], row["customers"]) for row in rows],
+                )
+    await run_in_threadpool(store)
+    # บันทึกแค่ว่ามีการอัปโหลดและกี่เดือน ไม่บันทึกตัวเลขของธุรกิจลงประวัติที่ผู้ดูแลระบบอ่านได้
+    audit("business_upload", user["username"], details=f"{len(rows)} เดือน{' · ข้อมูลสมมติ' if sample else ''}")
+    return {"ok": True, "months": len(rows), "errors": []}
+
+
+@app.post("/api/business/ai")
+def business_ai(user: dict = Depends(auth.require("manage:business"))) -> dict:
+    """ให้ AI เรียบเรียงบทสรุปและจัดลำดับคำแนะนำของธุรกิจนี้ เรียกเมื่อเจ้าของข้อมูลกดปุ่มเองเท่านั้น
+
+    ข้อมูลที่ส่งออกไปคือข้อเท็จจริงสรุป (ยอดรวม พยากรณ์ ผลทางสถิติ) ไม่ใช่ตารางรายเดือนทั้งชุด
+    """
+    analysis = business_analysis(user=user)
+    if not analysis["business"]:
+        raise HTTPException(status_code=400, detail="ยังไม่มีข้อมูลธุรกิจ")
+    facts = business.facts_for_ai(analysis["business"]["name"], analysis)
+    options = {item["key"]: f"{item['title']} — {item['detail']}" for item in analysis["recommendations"]}
+    try:
+        result = ai_summary.generate(facts, options, ai_summary.BUSINESS_AUDIENCE)
+    except ai_summary.SummaryError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    written = " ".join([result["content"], *(item["reason"] for item in result["ranking"])])
+    stored = {
+        "content": result["content"], "ranking": result["ranking"], "model": result["model"],
+        "unverified_numbers": ai_summary.unverified_numbers(written, facts + "\n" + "\n".join(options.values())),
+    }
+    query(
+        "UPDATE businesses SET ai_summary = %s, ai_created_at = now() WHERE owner_id = %s",
+        [json.dumps(stored, ensure_ascii=False), user["id"]],
+    )
+    audit("business_ai", user["username"], result["model"])
+    return business_analysis(user=user)
+
+
+@app.delete("/api/business")
+def business_delete(user: dict = Depends(auth.require("manage:business"))) -> dict:
+    query("DELETE FROM businesses WHERE owner_id = %s", [user["id"]])
+    audit("business_delete", user["username"])
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- สรุปโดย AI
+
+
+def thai_month(label: str) -> str:
+    return f"{THAI_MONTH_NAMES[int(label[5:7]) - 1]} {label[:4]}"
+
+
+def summary_facts() -> str:
+    """ข้อเท็จจริงที่ส่งให้ AI เรียบเรียง ทุกตัวเลขคำนวณโดยระบบและจัดรูปแบบไว้แล้ว AI ต้องคัดลอกไปตรง ๆ"""
+    verdict = lambda result: "ชัดเจนทางสถิติ" if result["significant"] else "ยังสรุปไม่ได้ทางสถิติ"
+    facts: list[str] = []
+
+    tourism = summary(_={})["tourism"]
+    if tourism["tourists_year_total"]:
+        change = tourism["year_over_year_percent"]
+        facts.append(
+            f"นักท่องเที่ยวลงเกาะล้านปี {tourism['year']} รวม {tourism['tourists_year_total']:,} คน"
+            + (f" เปลี่ยนแปลง {change:+}% เทียบปีก่อนหน้า" if change is not None else "")
+        )
+
+    forecast = tourism_forecast(months=3, _={})
+    if "error" not in forecast:
+        data = forecast["data"]
+        facts.append(
+            f"ข้อมูลนักท่องเที่ยวล่าสุดคือเดือน{thai_month(data['last_month'])} เก่ากว่าปัจจุบัน {data['months_behind_today']} เดือน"
+        )
+        for point in forecast["forecast"]:
+            facts.append(
+                f"พยากรณ์เดือน{thai_month(point['month'])}: {point['visitors']:,} คน "
+                f"(ช่วงประมาณ 95% คือ {point['lower']:,} ถึง {point['upper']:,} คน)"
+            )
+        facts.append(f"แบบจำลองพยากรณ์คลาดเคลื่อน {forecast['accuracy']['test_mape_percent']}% ในปีทดสอบ")
+
+    impact = impact_analysis()
+    for key, label in (
+        ("rain", "เดือนที่ฝนมากกว่าปกติ 100 มม."),
+        ("holidays", "เดือนที่วันหยุดราชการเพิ่มขึ้น 1 วัน"),
+        ("pm25", "เดือนที่ PM2.5 สูงกว่าปกติ 10 มคก./ลบ.ม."),
+    ):
+        result = impact.get(key)
+        if result:
+            facts.append(
+                f"{label} นักท่องเที่ยวต่างจากที่คาด {result['effect_percent']:+}% "
+                f"ความสัมพันธ์นี้{verdict(result)} (ข้อมูล {result['months_used']} เดือน)"
+            )
+
+    boats = island_boats(_={})
+    if boats["routes"]:
+        top = boats["routes"][0]
+        facts.append(
+            f"เส้นทางเรือที่มีผู้โดยสารมากที่สุดคือ {top['route_name']} คิดเป็น {top['share_percent']}% ของผู้โดยสารเรือทั้งหมด"
+            f" (นับทุกเที่ยวทั้งขาไปและขากลับ ช่วง {thai_month(boats['months'][0]['month'])} ถึง {thai_month(boats['months'][-1]['month'])})"
+        )
+
+    waste = island_waste(_={})
+    if waste["correlation"]:
+        stat = waste["correlation"]
+        interval = stat["ci_95"]
+        clear = bool(interval and (interval[0] > 0 or interval[1] < 0))
+        facts.append(
+            f"ปริมาณขยะบนเกาะล้านขึ้นลงตามจำนวนนักท่องเที่ยว (r = {stat['r']} จาก {stat['months_used']} เดือน) "
+            f"ความสัมพันธ์นี้{'ชัดเจนทางสถิติ' if clear else 'ยังสรุปไม่ได้ทางสถิติ'}"
+        )
+
+    air = air_quality(_={})["months"]
+    if air:
+        exceeded = sum(row["exceed_days"] or 0 for row in air)
+        worst = max(air, key=lambda row: row["pm25_avg"])
+        facts.append(
+            f"PM2.5 เกินมาตรฐานรวม {exceeded} วัน ใน {len(air)} เดือน เดือนที่ค่าเฉลี่ยสูงสุดคือ{thai_month(worst['month'])} ที่ {worst['pm25_avg']} มคก./ลบ.ม."
+        )
+    facts.extend(travel_behavior(_={})["insights"])
+    revenue = city_revenue(_={})["years"]
+    if revenue and revenue[-1]["change_percent"] is not None:
+        latest = revenue[-1]
+        facts.append(
+            f"รายได้ของเทศบาลเมืองพัทยาปีงบประมาณ {latest['budget_year']} รวม {latest['total_baht']:,} บาท "
+            f"เปลี่ยนแปลง {latest['change_percent']:+}% เทียบปีงบประมาณก่อนหน้า"
+        )
+    return "\n".join(f"- {fact}" for fact in facts)
+
+
+@app.get("/api/ai/summary")
+def ai_summary_latest(_: dict = Depends(auth.require("view:overview"))) -> dict:
+    """บทสรุปล่าสุดที่เก็บไว้ ไม่เรียก AI ใหม่ จึงเปิดหน้าเว็บกี่ครั้งก็ไม่กินโควตา"""
+    latest = query_one(
+        """SELECT content, model, unverified_numbers, ranking,
+                  to_char(created_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD HH24:MI') AS created_at,
+                  -- มีข้อมูลนำเข้าสำเร็จหลังจากสรุปครั้งนี้ บทสรุปจึงอาจไม่ตรงกับตัวเลขปัจจุบันแล้ว
+                  EXISTS (SELECT 1 FROM imports i WHERE i.imported_at > s.created_at AND i.records_success > 0) AS stale
+           FROM ai_summaries s ORDER BY created_at DESC, id DESC LIMIT 1"""
+    )
+    if latest:
+        latest["unverified_numbers"] = json.loads(latest["unverified_numbers"] or "[]")
+        latest["ranking"] = json.loads(latest["ranking"] or "[]")
+    return {"enabled": bool(ai_summary.api_key()), "summary": latest}
+
+
+@app.post("/api/ai/summary")
+def ai_summary_generate(actor: dict = Depends(auth.require("manage:data"))) -> dict:
+    """ให้ AI เรียบเรียงบทสรุปใหม่จากตัวเลขปัจจุบัน สั่งได้เฉพาะผู้ดูแล เพื่อคุมการใช้โควตา"""
+    facts = summary_facts()
+    if not facts:
+        raise HTTPException(status_code=400, detail="ยังไม่มีข้อมูลให้สรุป")
+    # AI เลือกและจัดลำดับได้เฉพาะคำแนะนำที่กฎของระบบสร้างไว้แล้ว ไม่ให้แต่งคำแนะนำใหม่
+    options = {item["key"]: f"{item['title']} — {item['detail']}" for item in recommendations(_={})}
+    try:
+        result = ai_summary.generate(facts, options)
+    except ai_summary.SummaryError as exc:
+        audit("ai_summary_failed", actor["username"], details=str(exc))
+        raise HTTPException(status_code=502, detail=str(exc))
+    # ตรวจตัวเลขทั้งในบทสรุปและในเหตุผลของลำดับ เทียบกับทุกอย่างที่ส่งให้ AI
+    written = " ".join([result["content"], *(item["reason"] for item in result["ranking"])])
+    unverified = ai_summary.unverified_numbers(written, facts + "\n" + "\n".join(options.values()))
+    query(
+        """INSERT INTO ai_summaries (content, facts, model, unverified_numbers, ranking, created_by)
+           VALUES (%s, %s, %s, %s, %s, %s)""",
+        [result["content"], facts, result["model"], json.dumps(unverified),
+         json.dumps(result["ranking"], ensure_ascii=False), actor["username"]],
+    )
+    audit("ai_summary", actor["username"], result["model"], f"ตัวเลขที่ตรวจไม่พบในข้อมูล {len(unverified)} ตัว")
+    return ai_summary_latest(_={})
 
 
 # ---------------------------------------------------------------- รายงาน Excel
