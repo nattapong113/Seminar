@@ -28,6 +28,7 @@ PERMISSIONS = (
     "export:report",         # ออกรายงานผู้บริหาร
     "manage:users",          # จัดการผู้ใช้และสิทธิ์
     "manage:data",           # นำเข้าไฟล์ข้อมูลและสั่งอัปเดตข้อมูลจาก API
+    "manage:business",       # อัปโหลดและดูผลวิเคราะห์ข้อมูลธุรกิจของตัวเอง
 )
 
 # ผู้ประกอบการเห็นข้อมูลที่ใช้วางแผนธุรกิจของตัวเองได้ แต่ไม่เห็นประชากรแฝงซึ่งเป็นข้อมูลระดับนโยบายเมือง
@@ -36,7 +37,7 @@ ROLE_DEFINITIONS: dict[str, tuple[str, tuple[str, ...]]] = {
     "admin": ("ผู้ดูแลระบบ", PERMISSIONS),
     "executive": ("ผู้บริหาร", tuple(p for p in PERMISSIONS if not p.startswith("manage:"))),
     "operator": ("ผู้ประกอบการ", (
-        "view:overview", "view:spatial", "view:forecast", "view:recommendations", "export:report",
+        "view:overview", "view:spatial", "view:forecast", "view:recommendations", "export:report", "manage:business",
     )),
 }
 

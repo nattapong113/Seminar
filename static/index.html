@@ -48,13 +48,17 @@
   <div class="app-shell" id="app-shell" hidden>
     <aside class="sidebar">
       <div class="brand"><div class="brand-mark">P</div><div><strong>PATTAYA</strong><span>SMART TOURISM</span></div></div>
-      <div class="side-label">WORKSPACE</div>
       <nav>
         <a class="nav-item" data-page="overview" data-permission="view:overview" href="#overview"><span class="nav-icon">◉</span>ภาพรวมเมือง</a>
-        <a class="nav-item" data-page="spatial" data-permission="view:spatial" href="#spatial"><span class="nav-icon">⌁</span>พฤติกรรมเชิงพื้นที่</a>
+        <div class="nav-group">วิเคราะห์</div>
+        <a class="nav-item" data-page="spatial" data-permission="view:spatial" href="#spatial"><span class="nav-icon">⌁</span>พื้นที่และย่าน</a>
+        <a class="nav-item" data-page="behavior" data-permission="view:overview" href="#behavior"><span class="nav-icon">⇄</span>พฤติกรรมการเดินทาง</a>
         <a class="nav-item" data-page="forecast" data-permission="view:forecast" href="#forecast"><span class="nav-icon">↗</span>พยากรณ์และผลกระทบ</a>
-        <a class="nav-item" data-page="island" data-permission="view:overview" href="#island"><span class="nav-icon">≋</span>เกาะล้านและสิ่งแวดล้อม</a>
-        <a class="nav-item" data-page="context" data-permission="view:demographics view:spatial" href="#context"><span class="nav-icon">▤</span>ประชากรและธุรกิจ</a>
+        <a class="nav-item" data-page="island" data-permission="view:overview" href="#island"><span class="nav-icon">≋</span>สิ่งแวดล้อม</a>
+        <a class="nav-item" data-page="context" data-permission="view:overview" href="#context"><span class="nav-icon">▤</span>เศรษฐกิจและประชากร</a>
+        <div class="nav-group">ของฉัน</div>
+        <a class="nav-item" data-page="business" data-permission="manage:business" href="#business"><span class="nav-icon">▣</span>ธุรกิจของฉัน</a>
+        <div class="nav-group">ระบบ</div>
         <a class="nav-item" data-page="sources" data-permission="view:sources" href="#sources"><span class="nav-icon">⛁</span>แหล่งข้อมูล</a>
         <a class="nav-item" data-page="data" data-permission="manage:data" href="#data"><span class="nav-icon">⇪</span>จัดการข้อมูล</a>
         <a class="nav-item" data-page="admin" data-permission="manage:users" href="#admin"><span class="nav-icon">⚿</span>จัดการผู้ใช้</a>
@@ -65,7 +69,11 @@
     <!-- แต่ละ section มี data-page บอกว่าอยู่หน้าไหน เมนูซ้ายสลับหน้าโดยซ่อน section ของหน้าอื่น (ดู showPage ใน app.js) -->
     <main class="main-content">
       <header class="topbar">
-        <div><p class="eyebrow">CITY INTELLIGENCE / PATTAYA</p><h1>ห้องควบคุมการท่องเที่ยว</h1></div>
+        <div>
+          <p class="eyebrow">PATTAYA SMART TOURISM / <span id="page-group">ภาพรวม</span></p>
+          <h1 id="page-title">ภาพรวมเมือง</h1>
+          <p class="page-subtitle" id="page-subtitle"></p>
+        </div>
         <div class="topbar-right">
           <div class="user-chip" id="user-chip">
             <strong id="user-name">—</strong><span id="user-role">—</span>
@@ -75,7 +83,7 @@
         </div>
       </header>
 
-      <section class="toolbar">
+      <section class="toolbar" data-page="overview">
         <div class="date-chip"><span>ข้อมูลนักท่องเที่ยว</span><strong id="tourism-range">—</strong></div>
         <div class="date-chip"><span>ปริมาณรถ</span><strong id="traffic-range">—</strong></div>
         <div class="weather-live" id="weather-live">กำลังอ่านสภาพอากาศจริง...</div>
@@ -102,6 +110,46 @@
           <div class="kpi-head"><span>ประชากรแฝงพัทยา</span><span class="kpi-symbol">☖</span></div>
           <strong id="kpi-population">—</strong>
           <div class="kpi-foot"><span id="kpi-population-note">—</span></div>
+        </article>
+      </section>
+
+      <section class="content-grid single" data-page="overview" id="ai-section" hidden>
+        <article class="panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">AI SUMMARY</p><h2>บทสรุปสำหรับผู้บริหาร</h2></div>
+            <div class="panel-heading-right">
+              <span class="chart-note" id="ai-meta">—</span>
+              <button class="approve-btn" id="ai-generate" data-permission="manage:data">สรุปใหม่</button>
+            </div>
+          </div>
+          <p class="ai-text" id="ai-text"></p>
+          <p class="login-error" id="ai-warning" hidden></p>
+          <p class="caveat">เรียบเรียงโดย AI จากตัวเลขที่ระบบคำนวณไว้แล้ว AI ไม่ได้คำนวณเอง ควรตรวจตัวเลขกับกราฟก่อนนำไปอ้างอิง</p>
+        </article>
+      </section>
+
+      <section class="content-grid lower-grid" data-page="overview">
+        <article class="panel chart-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">VISITOR FLOW</p><h2>นักท่องเที่ยวรายเดือน เทียบปริมาณรถ</h2></div>
+            <span class="chart-note">คน/เดือน · คัน/เดือน</span>
+          </div>
+          <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
+        </article>
+        <article class="panel">
+          <div class="panel-heading"><div><p class="eyebrow">UPCOMING</p><h2>วันหยุดและพยากรณ์อากาศ 7 วัน</h2></div></div>
+          <div class="forecast-strip" id="forecast-strip"><div class="loading">กำลังอ่านพยากรณ์...</div></div>
+          <div class="holiday-list" id="holiday-list"></div>
+        </article>
+      </section>
+
+      <section class="content-grid single" data-page="overview" data-permission="view:recommendations">
+        <article class="panel recommendation-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">DECISION SIGNALS</p><h2>คำแนะนำเชิงปฏิบัติ</h2></div>
+            <span class="chart-note" id="recommendation-note">—</span>
+          </div>
+          <div id="recommendation-list" class="recommendation-list is-grid"><div class="loading">กำลังประมวลผล...</div></div>
         </article>
       </section>
 
@@ -142,17 +190,46 @@
         </article>
       </section>
 
-      <section class="content-grid lower-grid" data-page="overview">
+      <section class="content-grid single" data-page="behavior">
+        <article class="panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">TRAVEL BEHAVIOR</p><h2>ข้อค้นพบด้านพฤติกรรมการเดินทาง</h2></div>
+            <span class="chart-note">นักท่องเที่ยวเกาะล้าน · ระดับกลุ่ม</span>
+          </div>
+          <div id="behavior-insights" class="insight-list"><div class="loading">กำลังวิเคราะห์...</div></div>
+          <p class="caveat" id="behavior-caveats"></p>
+        </article>
+      </section>
+
+      <section class="content-grid even-grid" data-page="behavior">
         <article class="panel chart-panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">VISITOR FLOW</p><h2>นักท่องเที่ยวรายเดือน เทียบปริมาณรถ</h2></div>
-            <span class="chart-note">คน/เดือน · คัน/เดือน</span>
+            <div><p class="eyebrow">WHEN</p><h2>เดินทางช่วงไหนของปี</h2></div>
+            <span class="chart-note">% เทียบค่าเฉลี่ยทั้งปี</span>
           </div>
-          <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
+          <div class="chart-wrap"><canvas id="season-chart"></canvas></div>
         </article>
-        <article class="panel recommendation-panel">
-          <div class="panel-heading"><div><p class="eyebrow">DECISION SIGNALS</p><h2>คำแนะนำเชิงปฏิบัติ</h2></div></div>
-          <div id="recommendation-list" class="recommendation-list"><div class="loading">กำลังประมวลผล...</div></div>
+        <article class="panel chart-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">WHERE</p><h2>ขึ้นเกาะและกลับที่ท่าไหน</h2></div>
+            <span class="chart-note">ผู้โดยสารเรือโดยสาร สะสม</span>
+          </div>
+          <div class="chart-wrap"><canvas id="pier-chart"></canvas></div>
+        </article>
+      </section>
+
+      <section class="content-grid lower-grid" data-page="behavior">
+        <article class="panel chart-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">FERRY &amp; SPEEDBOAT</p><h2>ผู้โดยสารเรือไปเกาะล้าน เทียบนักท่องเที่ยว</h2></div>
+            <span class="chart-note">คน/เดือน</span>
+          </div>
+          <div class="chart-wrap"><canvas id="boat-chart"></canvas></div>
+          <p class="caveat" id="boat-caveats"></p>
+        </article>
+        <article class="panel ranking-panel">
+          <div class="panel-heading"><div><p class="eyebrow">ROUTES</p><h2>ผู้โดยสารรายเส้นทาง</h2></div></div>
+          <div id="route-list" class="ranking-list"><div class="loading">กำลังอ่านข้อมูล...</div></div>
         </article>
       </section>
 
@@ -178,18 +255,13 @@
         </article>
       </section>
 
-      <section class="content-grid lower-grid" data-page="island">
-        <article class="panel chart-panel">
+      <section class="content-grid single" data-page="forecast" data-permission="view:forecast">
+        <article class="panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">FERRY &amp; SPEEDBOAT</p><h2>ผู้โดยสารเรือไปเกาะล้าน เทียบนักท่องเที่ยว</h2></div>
-            <span class="chart-note">คน/เดือน</span>
+            <div><p class="eyebrow">MODEL COMPARISON</p><h2>เปรียบเทียบวิธีพยากรณ์</h2></div>
+            <span class="chart-note">ความคลาดเคลื่อนเฉลี่ย · ยิ่งต่ำยิ่งแม่น</span>
           </div>
-          <div class="chart-wrap"><canvas id="boat-chart"></canvas></div>
-          <p class="caveat" id="boat-caveats"></p>
-        </article>
-        <article class="panel ranking-panel">
-          <div class="panel-heading"><div><p class="eyebrow">ROUTES</p><h2>ผู้โดยสารรายเส้นทาง</h2></div></div>
-          <div id="route-list" class="ranking-list"><div class="loading">กำลังอ่านข้อมูล...</div></div>
+          <div class="model-table" id="forecast-comparison"></div>
         </article>
       </section>
 
@@ -212,11 +284,18 @@
         </article>
       </section>
 
-      <section class="content-grid single" data-page="overview">
-        <article class="panel">
-          <div class="panel-heading"><div><p class="eyebrow">UPCOMING</p><h2>วันหยุดและพยากรณ์อากาศ 7 วัน</h2></div></div>
-          <div class="forecast-strip" id="forecast-strip"><div class="loading">กำลังอ่านพยากรณ์...</div></div>
-          <div class="holiday-list" id="holiday-list"></div>
+      <section class="content-grid lower-grid" data-page="context">
+        <article class="panel chart-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">CITY REVENUE</p><h2>รายได้ของเมืองพัทยารายปีงบประมาณ</h2></div>
+            <span class="chart-note" id="revenue-note">—</span>
+          </div>
+          <div class="chart-wrap"><canvas id="revenue-chart"></canvas></div>
+          <p class="caveat" id="revenue-caveats"></p>
+        </article>
+        <article class="panel ranking-panel">
+          <div class="panel-heading"><div><p class="eyebrow">TOP SOURCES</p><h2>รายได้สูงสุดของปีล่าสุด</h2></div></div>
+          <div id="revenue-list" class="ranking-list"><div class="loading">กำลังอ่านข้อมูล...</div></div>
         </article>
       </section>
 
@@ -231,6 +310,59 @@
         <article class="panel" data-permission="view:spatial">
           <div class="panel-heading"><div><p class="eyebrow">BUSINESS MIX</p><h2>ประเภทธุรกิจท่องเที่ยว</h2></div></div>
           <div class="chart-wrap short"><canvas id="poi-chart"></canvas></div>
+        </article>
+      </section>
+
+      <section class="content-grid single" data-page="business" data-permission="manage:business">
+        <article class="panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">MY BUSINESS</p><h2 id="business-title">ธุรกิจของฉัน</h2></div>
+            <div class="panel-heading-right">
+              <span class="sample-tag" data-sample-tag hidden>ข้อมูลสมมติเพื่อสาธิต</span>
+              <span class="chart-note" id="business-meta">—</span>
+            </div>
+          </div>
+          <div class="impact-tiles business-kpis" id="business-kpis"></div>
+          <form class="business-form" id="business-form">
+            <input type="text" id="business-name" placeholder="ชื่อธุรกิจ" required>
+            <input type="file" id="business-file" accept=".csv" required>
+            <label class="business-sample"><input type="checkbox" id="business-sample"> เป็นข้อมูลสมมติเพื่อสาธิต</label>
+            <button type="submit" id="business-submit">อัปโหลด</button>
+            <button type="button" class="icon-btn" id="business-delete" title="ลบข้อมูลธุรกิจของฉัน" hidden>✕</button>
+          </form>
+          <div id="business-result" class="upload-result" hidden></div>
+          <p class="caveat">ไฟล์ CSV รายเดือน คอลัมน์ <code>year,month,revenue,customers</code> (ปีเป็น พ.ศ. หรือ ค.ศ. ก็ได้ รายได้เป็นบาท customers ไม่ใส่ก็ได้)
+            เดือนต้องต่อเนื่องไม่ขาดช่วง และต้องมีอย่างน้อย 24 เดือนจึงจะวิเคราะห์ฤดูกาลและพยากรณ์ได้
+            · <a href="/static/business-template.csv" download>ดาวน์โหลดไฟล์แม่แบบ</a>
+            · การอัปโหลดแทนที่ข้อมูลเดิมทั้งชุด · มีเพียงคุณที่เห็นข้อมูลนี้ และจะถูกส่งให้ AI เฉพาะเมื่อคุณกดปุ่มให้ AI สรุปเอง</p>
+        </article>
+      </section>
+
+      <section class="content-grid lower-grid" data-page="business" data-permission="manage:business" data-business-detail hidden>
+        <article class="panel chart-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">REVENUE VS CITY</p><h2>รายได้ของธุรกิจ เทียบนักท่องเที่ยวของเมือง</h2></div>
+            <span class="sample-tag" data-sample-tag hidden>ข้อมูลสมมติเพื่อสาธิต</span>
+          </div>
+          <div class="chart-wrap"><canvas id="business-chart"></canvas></div>
+          <div class="impact-tiles" id="business-links" style="margin-top:14px"></div>
+          <p class="caveat" id="business-caveats"></p>
+        </article>
+        <article class="panel recommendation-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">FOR THIS BUSINESS</p><h2>คำแนะนำจากข้อมูลของธุรกิจ</h2></div>
+            <span class="sample-tag" data-sample-tag hidden>ข้อมูลสมมติเพื่อสาธิต</span>
+          </div>
+          <div class="business-ai">
+            <p class="ai-text is-empty" id="business-ai-text"></p>
+            <p class="login-error" id="business-ai-warning" hidden></p>
+            <div class="business-ai-foot">
+              <span class="chart-note" id="business-ai-meta"></span>
+              <button class="approve-btn" id="business-ai-generate">ให้ AI สรุปและจัดลำดับ</button>
+            </div>
+          </div>
+          <div class="forecast-table" id="business-forecast"></div>
+          <div id="business-recommendations" class="recommendation-list"></div>
         </article>
       </section>
 
@@ -297,7 +429,7 @@
         </article>
       </section>
 
-      <footer>ต้นแบบระบบศูนย์ข้อมูลการท่องเที่ยวพัทยา <span>•</span> ทุกตัวเลขบนหน้านี้มาจากข้อมูลจริงที่นำเข้าแล้ว ไม่มีข้อมูลจำลอง</footer>
+      <footer>ต้นแบบระบบศูนย์ข้อมูลการท่องเที่ยวพัทยา <span>•</span> ข้อมูลของเมืองทั้งหมดมาจาก Open Data จริงที่นำเข้าแล้ว <span>•</span> ข้อมูลในหน้า "ธุรกิจของฉัน" เป็นของผู้ใช้แต่ละราย และติดป้ายกำกับเมื่อเป็นข้อมูลสมมติ</footer>
     </main>
   </div>
 
