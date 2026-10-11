@@ -46,6 +46,29 @@ PUBLIC_HOLIDAY_ONLY = "COALESCE(holiday_type, 'public') <> 'observance'"
 
 HOLIDAY_SOURCE = "Thai Public Holidays Calendar (iCalendar)"
 
+# ประเภทสถานที่ใน OpenStreetMap เป็นแท็กภาษาอังกฤษ แปลเฉพาะตอนแสดงผล ในฐานข้อมูลยังเก็บแท็กเดิมไว้ตรวจย้อนได้
+POI_CATEGORY_LABELS = {
+    "bar": "บาร์", "restaurant": "ร้านอาหาร", "guest_house": "เกสต์เฮาส์", "cafe": "คาเฟ่", "hotel": "โรงแรม",
+    "apartment": "อพาร์ตเมนต์ให้เช่า", "nightclub": "ไนต์คลับ", "hostel": "โฮสเทล", "motel": "โมเทล",
+    "theme_park": "สวนสนุก", "attraction": "สถานที่ท่องเที่ยว", "museum": "พิพิธภัณฑ์", "artwork": "งานศิลปะ",
+    "viewpoint": "จุดชมวิว", "marketplace": "ตลาด", "information": "ศูนย์ข้อมูลท่องเที่ยว", "zoo": "สวนสัตว์",
+    "spa_resort": "สปารีสอร์ต", "mall": "ห้างสรรพสินค้า", "camp_site": "ลานกางเต็นท์", "picnic_site": "จุดปิกนิก",
+    "gallery": "แกลเลอรี", "aquarium": "พิพิธภัณฑ์สัตว์น้ำ", "chalet": "บ้านพักตากอากาศ", "resort": "รีสอร์ต",
+    # OSM บางจุดใส่แค่ tourism=yes ไม่ได้บอกประเภท
+    "yes": "ไม่ระบุประเภท", "other": "อื่น ๆ",
+}
+THAI_MONTH_SHORT = ("ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.")
+
+
+def category_label(category: str | None) -> str:
+    return POI_CATEGORY_LABELS.get(category or "other", category or "อื่น ๆ")
+
+
+def thai_date(value: Any) -> str:
+    """วันที่ (date หรือข้อความ YYYY-MM-DD) เป็นรูปแบบที่อ่านง่าย เช่น 13 ต.ค. 2026"""
+    text = str(value)
+    return f"{int(text[8:10])} {THAI_MONTH_SHORT[int(text[5:7]) - 1]} {text[:4]}"
+
 # อัปเดตข้อมูลจาก API ภายนอกเองระหว่างที่เซิร์ฟเวอร์เปิดอยู่ ตั้ง AUTO_REFRESH=0 ใน .env เพื่อปิด
 AUTO_REFRESH = os.environ.get("AUTO_REFRESH", "1") == "1"
 REFRESH_FIRST_CHECK_SECONDS = 30
@@ -702,9 +725,10 @@ def zones(year: int | None = Query(default=None),
             ):
                 nearby[point["category"]] = nearby.get(point["category"], 0) + 1
         intersection["poi_nearby"] = sum(nearby.values())
-        intersection["poi_nearby_by_category"] = dict(
-            sorted(nearby.items(), key=lambda item: item[1], reverse=True)[:5]
-        )
+        intersection["poi_nearby_by_category"] = {
+            category_label(category): count
+            for category, count in sorted(nearby.items(), key=lambda item: item[1], reverse=True)[:5]
+        }
         intersection["vehicle_volume_per_month"] = round(
             intersection["vehicle_volume"] / intersection["months"]
         ) if intersection["months"] else None
@@ -820,8 +844,8 @@ def micro_zones(year: int | None = Query(default=None),
             "poi_total": bucket["poi_total"],
             "poi_density_per_km2": round(bucket["poi_total"] / bucket["area_km2"], 1),
             "poi_share_percent": round(bucket["poi_total"] / poi_grand_total * 100, 1) if poi_grand_total else 0.0,
-            "top_categories": dict(categories[:5]),
-            "dominant_category": categories[0][0] if categories else None,
+            "top_categories": {category_label(category): count for category, count in categories[:5]},
+            "dominant_category": category_label(categories[0][0]) if categories else None,
             "intersection_count": len(bucket["intersections"]),
             "intersection_names": bucket["intersections"],
             "vehicle_volume": bucket["vehicle_volume"],
@@ -967,10 +991,13 @@ def poi(category: str | None = Query(default=None), limit: int = Query(default=2
 
 @app.get("/api/poi/categories")
 def poi_categories(_: dict = Depends(auth.require("view:spatial"))) -> list[dict]:
-    return query(
+    rows = query(
         """SELECT category, COUNT(*) AS total FROM poi_businesses
            GROUP BY category ORDER BY total DESC"""
     )
+    for row in rows:
+        row["label"] = category_label(row["category"])
+    return rows
 
 
 @app.get("/api/holidays")
@@ -1188,7 +1215,7 @@ def recommendations(_: dict = Depends(auth.require("view:recommendations"))) -> 
             )
             results.append({
                 "key": "staffing",
-                "title": f"วางแผนกำลังคนเดือน {next_month['month']} (เดือนถัดจากข้อมูลล่าสุด)",
+                "title": f"วางแผนกำลังคนเดือน{thai_month(next_month['month'])} (เดือนถัดจากข้อมูลล่าสุด)",
                 "detail": (
                     f"พยากรณ์ {next_month['visitors']:,} คน เทียบเดือนเดียวกันปีก่อนที่ {baseline:,} คน "
                     f"({change:+.1f}%) {action}"
@@ -1201,7 +1228,7 @@ def recommendations(_: dict = Depends(auth.require("view:recommendations"))) -> 
             buffer_percent = (next_month["upper"] / next_month["visitors"] - 1) * 100
             results.append({
                 "key": "stock",
-                "title": f"เตรียมสต็อกเดือน {next_month['month']} ให้รองรับถึง {next_month['upper']:,} คน",
+                "title": f"เตรียมสต็อกเดือน{thai_month(next_month['month'])} ให้รองรับถึง {next_month['upper']:,} คน",
                 "detail": (
                     f"ค่าพยากรณ์อยู่ที่ {next_month['visitors']:,} คน แต่ขอบบนของช่วงประมาณ 95% คือ "
                     f"{next_month['upper']:,} คน การเผื่อสต็อกอีก {buffer_percent:.0f}% จะกันของขาดกรณีคนมากกว่าคาด"
@@ -1228,7 +1255,7 @@ def recommendations(_: dict = Depends(auth.require("view:recommendations"))) -> 
     if lag >= 2:
         results.append({
             "key": "stale_data",
-            "title": f"ข้อมูลนักท่องเที่ยวค้างอยู่ที่เดือน {forecast['data']['last_month']}",
+            "title": f"ข้อมูลนักท่องเที่ยวค้างอยู่ที่เดือน{thai_month(forecast['data']['last_month'])}",
             "detail": (
                 f"ช้ากว่าปัจจุบัน {lag} เดือน คำแนะนำทั้งหมดที่อิงการพยากรณ์จึงเป็นการต่อยอดจากข้อมูลเก่า "
                 "ควรนำเข้าข้อมูลเดือนล่าสุดจาก Open Data เมืองพัทยาก่อนนำไปใช้ตัดสินใจจริง"
@@ -1303,7 +1330,7 @@ def recommendations(_: dict = Depends(auth.require("view:recommendations"))) -> 
         rain = upcoming["precipitation_probability_percent"] or 0
         results.append({
             "key": "holiday_ahead",
-            "title": f"วันหยุด{upcoming['holiday']} ({upcoming['date']})",
+            "title": f"วันหยุด{upcoming['holiday']} ({thai_date(upcoming['date'])})",
             "detail": (
                 f"พยากรณ์ฝน {rain}% อุณหภูมิสูงสุด {upcoming['temperature_max_c']}°C "
                 + ("ควรเตรียมพื้นที่ในร่มและกิจกรรมสำรอง" if rain >= 60 else "อากาศเอื้อต่อกิจกรรมกลางแจ้ง")
@@ -1316,7 +1343,7 @@ def recommendations(_: dict = Depends(auth.require("view:recommendations"))) -> 
         results.append({
             "key": "rainy_week",
             "title": f"มีวันฝนตกหนัก {len(days)} วันใน 7 วันข้างหน้า",
-            "detail": "วันที่ " + ", ".join(day["date"] for day in days) + " ควรสื่อสารกิจกรรมในร่มล่วงหน้า",
+            "detail": "วันที่ " + ", ".join(thai_date(day["date"]) for day in days) + " ควรสื่อสารกิจกรรมในร่มล่วงหน้า",
             "signal": "สภาพอากาศ",
             "source": "Open-Meteo",
         })
@@ -1328,7 +1355,7 @@ def recommendations(_: dict = Depends(auth.require("view:recommendations"))) -> 
     if dense:
         results.append({
             "key": "business_mix",
-            "title": f"ธุรกิจกลุ่ม {dense[0]['category']} หนาแน่นที่สุด ({dense[0]['total']:,} แห่ง)",
+            "title": f"ธุรกิจประเภท{category_label(dense[0]['category'])}หนาแน่นที่สุด ({dense[0]['total']:,} แห่ง)",
             "detail": "ใช้เป็นฐานกำหนดมาตรการดูแลนักท่องเที่ยวและการกระจายกิจกรรมกลางคืน",
             "signal": "โครงสร้างธุรกิจ",
             "source": "OpenStreetMap (Overpass API)",

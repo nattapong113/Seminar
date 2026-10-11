@@ -248,3 +248,29 @@ a.nav-item{text-decoration:none}
 .recommendation-list.is-grid{grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px;align-items:start}
 .recommendation-list.is-grid .recommendation-item{padding:10px 12px;height:100%}
 @media(max-width:700px){.nav-group{display:none}.page-subtitle{display:none}.toolbar{margin-top:0}}
+
+/* ---------------------------------------------------------------- ภาษาไทยทั้งหน้า สถานะโหลด และปุ่มดูเพิ่ม */
+/* ป้ายเล็กเหนือหัวข้อแผงเป็นภาษาไทยแล้ว จึงเลิกใช้ DM Mono แบบเว้นช่องไฟ ซึ่งทำให้สระและวรรณยุกต์หลุดจากตัวอักษร */
+.eyebrow{font:600 10px 'IBM Plex Sans Thai';letter-spacing:0;color:#88a0a0}
+.sidebar-bottom strong{font-family:'IBM Plex Sans Thai';letter-spacing:0}
+.zone-sub,.rank-name small,.rank-unit{font-family:'IBM Plex Sans Thai'}
+.loading-banner{display:flex;align-items:center;gap:9px;background:#eef6f9;border-left:3px solid var(--blue);color:#3d6f84;font-size:12px;padding:9px 13px;margin-bottom:16px}
+.loading-banner i{width:11px;height:11px;border:2px solid #b9d6e2;border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+.more-btn{display:block;margin:14px auto 0;background:none;border:1px solid var(--line);color:var(--muted);font:500 12px 'IBM Plex Sans Thai';padding:8px 18px;cursor:pointer}
+.more-btn:hover{border-color:var(--coral);color:var(--coral)}
+@media print{.loading-banner{display:none!important}}
+/* ---------------------------------------------------------------- คำอธิบายสีใต้แผนที่ */
+.map-legend{display:grid;gap:9px;margin-top:12px;padding-top:12px;border-top:1px dashed var(--line);font-size:11px;color:#5a6b70}
+.legend-row{display:grid;grid-template-columns:150px 1fr;gap:4px 12px;align-items:center}
+.legend-row strong{font-weight:600;color:var(--ink);font-size:11px}
+/* ไล่สีเดียวกับ gradient ของ L.heatLayer ใน renderMap */
+.legend-ramp{height:9px;background:linear-gradient(90deg,#4b90a9 0%,#5da17d 33%,#e5b84d 60%,#ee745b 84%,#a8301c 100%);opacity:.85}
+.legend-ends{grid-column:2;display:flex;justify-content:space-between;font-size:10px;color:#8a9699}
+.legend-ends em{font-style:normal}
+.legend-items{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center}
+.legend-items>span{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.legend-items .dot{width:11px;height:11px;border-radius:50%;opacity:.75;flex-shrink:0}
+.legend-items .ring{width:11px;height:11px;border-radius:50%;border:2px dashed;flex-shrink:0}
+.legend-note{color:#9ba7a9;font-size:10px;white-space:normal!important}
+@media(max-width:700px){.legend-row{grid-template-columns:1fr}.legend-ends{grid-column:1}}
