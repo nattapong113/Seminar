@@ -27,6 +27,10 @@ const compactFormat = {
     return `${Number((value / unit[0]).toFixed(2))} ${unit[1]}`;
   },
 };
+// ช่วงประมาณแสดงเป็นตัวเลขเต็มปัดหลักพัน ความละเอียดกว่านั้นไม่มีความหมายสำหรับค่าประมาณ
+const roundedRange = (lower, upper) => (
+  `${numberFormat.format(Math.round(lower / 1000) * 1000)}–${numberFormat.format(Math.round(upper / 1000) * 1000)}`
+);
 // วันที่ YYYY-MM-DD เป็นแบบที่อ่านง่าย เช่น 13 ต.ค. 2026
 const thaiDate = (iso) => `${Number(iso.slice(8, 10))} ${THAI_MONTHS[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`;
 const charts = {};
@@ -257,9 +261,24 @@ function renderMicroZones(data) {
 
 // ---------------------------------------------------------------- อันดับ / คำแนะนำ
 
+// ปริมาณรถเป็นยอดรวมรายปีย้อนหลัง ไม่ใช่สภาพจราจรขณะนี้ จึงให้เลือกช่วงและเขียนช่วงกำกับไว้เสมอ
+// ค่าเริ่มต้นคือปีล่าสุด ให้ตรงกับตัวเลขบนการ์ดในหน้าภาพรวม และไม่ถูกค่าผิดปกติของปี 2024 ดึงอันดับ
 function renderRanking(zones) {
+  const select = document.querySelector('#traffic-year');
+  if (!select.options.length && zones.length) {
+    const first = Math.min(...zones.map((zone) => zone.first_year));
+    const last = Math.max(...zones.map((zone) => zone.last_year));
+    const years = [];
+    for (let year = last; year >= first; year -= 1) years.push(year);
+    select.innerHTML = years.map((year) => `<option value="${year}">ปี ${year}</option>`).join('')
+      + (years.length > 1 ? `<option value="">รวม ${first}–${last}</option>` : '');
+    // ข้อมูลรอบแรกเป็นยอดรวมทุกปี สลับไปปีล่าสุดแล้ววาดใหม่ทั้งอันดับและวงกลมบนแผนที่
+    selectTrafficYear(String(last));
+    return;
+  }
   const top = zones.slice(0, 8);
   const maxVolume = top[0]?.vehicle_volume || 1;
+  const period = select.selectedOptions[0]?.textContent || '';
   document.querySelector('#ranking-list').innerHTML = top.map((zone, index) => `
     <div class="ranking-item">
       <span class="rank">${String(index + 1).padStart(2, '0')}</span>
@@ -267,9 +286,23 @@ function renderRanking(zones) {
         <div class="rank-name">${zone.intersection_name}</div>
         <div class="rank-bar"><i style="width:${Math.max(8, zone.vehicle_volume / maxVolume * 100)}%"></i></div>
       </div>
-      <div class="rank-value">${compactFormat.format(zone.vehicle_volume)}<span class="rank-unit">คัน สะสม</span></div>
-    </div>`).join('');
+      <div class="rank-value">${compactFormat.format(zone.vehicle_volume)}<span class="rank-unit">คัน ${select.value ? 'ทั้งปี' : 'รวม'}</span></div>
+    </div>`).join('') || '<div class="loading">ยังไม่มีข้อมูลปริมาณรถ</div>';
+  setText('ranking-note', zones.length
+    ? `ยอด${period} จากข้อมูลย้อนหลังของเมือง ไม่ใช่สภาพจราจรขณะนี้ · ข้อมูลปี 2024 มีเดือนที่ค่าสูงผิดปกติ จึงไม่ควรเทียบข้ามปี`
+    : '');
 }
+
+async function selectTrafficYear(year) {
+  document.querySelector('#traffic-year').value = year;
+  const zones = await api(`/api/zones${year ? `?year=${year}` : ''}`);
+  // ถ้าไม่ได้อยู่หน้าแผนที่ drawMap จะพักข้อมูลไว้ แล้ววาดตอนเปิดหน้านั้น
+  state.mapData = [zones, state.poiPoints];
+  drawMap();
+  renderRanking(zones);
+}
+
+document.querySelector('#traffic-year').addEventListener('change', (event) => selectTrafficYear(event.target.value));
 
 // ถ้ามีลำดับที่ AI จัดไว้ ให้ข้อเหล่านั้นขึ้นก่อนตามลำดับพร้อมเหตุผล ข้อที่ AI ไม่ได้เลือกต่อท้ายตามลำดับของกฎ
 // จับคู่ด้วย key ของกฎ เพราะหัวข้อเปลี่ยนตามข้อมูล ข้อที่ AI เคยจัดไว้แต่ตอนนี้กฎไม่สร้างแล้วจะหายไปเอง
@@ -440,8 +473,10 @@ function renderSources(sources) {
   document.querySelector('#source-list').innerHTML = sources.map((source) => `
     <div class="source-item">
       <div>
-        <strong>${source.name}</strong>
-        <span>${source.endpoint || 'ไฟล์ CSV จาก data.pattaya.go.th'}</span>
+        <strong>${escapeHtml(source.label || source.name)}</strong>
+        <span>${escapeHtml(source.endpoint || (source.label
+          ? `ไฟล์ ${source.name} จาก Open Data เมืองพัทยา`
+          : 'ข้อมูลของไฟล์นี้ถูกแทนที่ด้วยไฟล์ที่นำเข้าทีหลังแล้ว'))}</span>
       </div>
       <div class="source-meta">
         <b>${source.records ? numberFormat.format(source.records) : '—'}</b>
@@ -544,7 +579,7 @@ function renderTourismForecast(data) {
     <div class="forecast-row">
       <span class="month">${monthLabel(row.month)}</span>
       <b>${numberFormat.format(row.visitors)} คน</b>
-      <span class="range">${row.lower === null ? '' : `${compactFormat.format(row.lower)}–${compactFormat.format(row.upper)}`}</span>
+      <span class="range">${row.lower === null ? '' : `${roundedRange(row.lower, row.upper)} คน`}</span>
     </div>`).join('');
 
   document.querySelector('#forecast-caveats').textContent = data.caveats.map((text) => `• ${text}`).join('  ');
@@ -758,7 +793,7 @@ function renderBusiness(data) {
     <div class="forecast-row">
       <span>${monthLabel(point.month)}</span>
       <b>${baht(point.revenue)}</b>
-      <em>${point.lower === null ? '' : `${compactFormat.format(point.lower)}–${compactFormat.format(point.upper)}`}</em>
+      <em>${point.lower === null ? '' : `${roundedRange(point.lower, point.upper)} บาท`}</em>
     </div>`).join('') : '';
   const ai = data.ai;
   const aiText = document.querySelector('#business-ai-text');
@@ -1006,6 +1041,7 @@ async function loadDashboard() {
       renderTrendChart(trends, traffic || []);
     }),
     load([fetchIf('view:spatial', '/api/zones'), fetchIf('view:spatial', '/api/poi?limit=3000')], (zones, points) => {
+      state.poiPoints = points;
       state.mapData = [zones, points];
       drawMap();
       renderRanking(zones);
@@ -1087,6 +1123,12 @@ window.addEventListener('hashchange', () => {
   window.scrollTo(0, 0);
 });
 
+document.querySelectorAll('.kpi-card[data-goto]').forEach((card) => {
+  const go = () => { if (card.classList.contains('is-link')) location.hash = card.dataset.goto; };
+  card.addEventListener('click', go);
+  card.addEventListener('keydown', (event) => { if (event.key === 'Enter') go(); });
+});
+
 // ---------------------------------------------------------------- ผู้ใช้และสิทธิ์
 
 function applyPermissions() {
@@ -1105,6 +1147,20 @@ function applyPermissions() {
     }
     group.hidden = !visible;
   });
+  // การ์ดตัวเลขหลักกดไปหน้ารายละเอียดได้ เฉพาะเมื่อบทบาทนี้เข้าหน้านั้นได้
+  document.querySelectorAll('.kpi-card[data-goto]').forEach((card) => {
+    const link = document.querySelector(`.nav-item[data-page="${card.dataset.goto}"]`);
+    card.classList.toggle('is-link', Boolean(link) && !link.hidden);
+    if (link && !link.hidden) {
+      card.tabIndex = 0;
+      card.setAttribute('role', 'link');
+      card.title = `ดูรายละเอียดในหน้า${link.textContent.trim().slice(1)}`;
+    } else {
+      card.removeAttribute('tabindex');
+      card.removeAttribute('role');
+      card.removeAttribute('title');
+    }
+  });
   setText('user-name', state.user.full_name || state.user.username);
   setText('user-role', state.user.role_labels.join(' · ') || 'ไม่มีบทบาท');
 }
@@ -1116,7 +1172,7 @@ function showLogin(message) {
   const screen = document.querySelector('#login-screen');
   screen.hidden = false;
   // ถ้าเพิ่งอยู่ที่ฟอร์มสมัคร ต้องสลับกลับมาหน้าเข้าสู่ระบบ ไม่งั้นข้อความแจ้งเตือนจะถูกซ่อนอยู่หลังฟอร์มที่ไม่ได้แสดง
-  switchAuthForm(false);
+  switchAuthForm('login');
   const error = document.querySelector('#login-error');
   error.hidden = !message;
   if (message) error.textContent = message;
@@ -1172,16 +1228,60 @@ document.querySelector('#login-form').addEventListener('submit', async (event) =
 
 // ---------------------------------------------------------------- สมัครสมาชิก
 
-function switchAuthForm(showRegister) {
-  document.querySelector('#login-form').hidden = showRegister;
-  document.querySelector('#register-form').hidden = !showRegister;
-  document.querySelector('#login-error').hidden = true;
-  document.querySelector('#register-error').hidden = true;
-  document.querySelector('#register-success').hidden = true;
+// หน้าเข้าสู่ระบบมีสามฟอร์ม แสดงทีละฟอร์ม: 'login' | 'register' | 'password'
+function switchAuthForm(form) {
+  document.querySelector('#login-form').hidden = form !== 'login';
+  document.querySelector('#register-form').hidden = form !== 'register';
+  document.querySelector('#login-password-form').hidden = form !== 'password';
+  ['#login-error', '#login-notice', '#register-error', '#register-success', '#lp-error'].forEach((selector) => {
+    document.querySelector(selector).hidden = true;
+  });
 }
 
-document.querySelector('#show-register').addEventListener('click', () => switchAuthForm(true));
-document.querySelector('#show-login').addEventListener('click', () => switchAuthForm(false));
+document.querySelector('#show-register').addEventListener('click', () => switchAuthForm('register'));
+document.querySelector('#show-login').addEventListener('click', () => switchAuthForm('login'));
+document.querySelector('#show-login-from-password').addEventListener('click', () => switchAuthForm('login'));
+document.querySelector('#show-password').addEventListener('click', () => {
+  switchAuthForm('password');
+  // ถ้าพิมพ์ชื่อผู้ใช้ไว้ในหน้าเข้าสู่ระบบแล้ว ไม่ต้องพิมพ์ซ้ำ
+  document.querySelector('#lp-username').value = document.querySelector('#login-username').value;
+});
+
+document.querySelector('#login-password-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const error = document.querySelector('#lp-error');
+  const button = document.querySelector('#lp-submit');
+  const username = document.querySelector('#lp-username').value.trim();
+  const next = document.querySelector('#lp-new').value;
+  error.hidden = true;
+  if (next !== document.querySelector('#lp-confirm').value) {
+    error.hidden = false;
+    error.textContent = 'รหัสผ่านใหม่สองช่องไม่ตรงกัน';
+    return;
+  }
+  button.disabled = true;
+  try {
+    // เรียก fetch ตรง ๆ ไม่ผ่าน api() เพราะยังไม่ได้ล็อกอิน และไม่ต้องการให้ 401 พากลับหน้าเข้าสู่ระบบระหว่างกรอกฟอร์ม
+    const response = await fetch('/api/auth/password', {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, current_password: document.querySelector('#lp-current').value, new_password: next }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.detail || 'เปลี่ยนรหัสผ่านไม่สำเร็จ');
+    event.target.reset();
+    switchAuthForm('login');
+    document.querySelector('#login-username').value = username;
+    const notice = document.querySelector('#login-notice');
+    notice.hidden = false;
+    notice.textContent = 'เปลี่ยนรหัสผ่านแล้ว เข้าสู่ระบบด้วยรหัสผ่านใหม่ได้เลย';
+    document.querySelector('#login-password').focus();
+  } catch (caught) {
+    error.hidden = false;
+    error.textContent = caught.message;
+  } finally {
+    button.disabled = false;
+  }
+});
 
 document.querySelector('#register-form').addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -1324,6 +1424,18 @@ document.querySelector('#upload-form').addEventListener('submit', async (event) 
 // ---------------------------------------------------------------- แผงผู้ดูแลระบบ
 
 const ROLE_LABELS = { admin: 'ผู้ดูแลระบบ', executive: 'ผู้บริหาร', operator: 'ผู้ประกอบการ' };
+// ชื่อเหตุการณ์ในประวัติการใช้งาน ฐานข้อมูลเก็บเป็นรหัสอังกฤษ (ชี้เมาส์ที่ข้อความจะเห็นรหัสเดิม)
+const AUDIT_LABELS = {
+  login: 'เข้าสู่ระบบ', logout: 'ออกจากระบบ', login_failed: 'เข้าสู่ระบบไม่สำเร็จ',
+  login_pending: 'พยายามเข้าสู่ระบบ (รออนุมัติ)', login_rejected: 'พยายามเข้าสู่ระบบ (บัญชีถูกระงับ)',
+  register: 'สมัครสมาชิก', register_duplicate: 'สมัครด้วยชื่อที่มีอยู่แล้ว',
+  create_user: 'สร้างผู้ใช้', approve_user: 'อนุมัติผู้ใช้', reject_user: 'ปฏิเสธหรือระงับผู้ใช้', delete_user: 'ลบผู้ใช้',
+  change_password: 'เปลี่ยนรหัสผ่าน', change_password_failed: 'เปลี่ยนรหัสผ่านไม่สำเร็จ', reset_password: 'รีเซ็ตรหัสผ่าน',
+  import_data: 'นำเข้าข้อมูล', import_failed: 'นำเข้าข้อมูลไม่สำเร็จ',
+  refresh_data: 'อัปเดตข้อมูลอัตโนมัติ', refresh_failed: 'อัปเดตข้อมูลไม่สำเร็จ',
+  ai_summary: 'ให้ AI สรุป', ai_summary_failed: 'ให้ AI สรุปไม่สำเร็จ',
+  business_upload: 'อัปโหลดข้อมูลธุรกิจ', business_delete: 'ลบข้อมูลธุรกิจ', business_ai: 'ให้ AI สรุปข้อมูลธุรกิจ',
+};
 
 async function loadAdminPanel() {
   const [users, roles, log] = await Promise.all([
@@ -1381,7 +1493,9 @@ async function loadAdminPanel() {
   document.querySelector('#audit-list').innerHTML = log.map((row) => `
     <div class="audit-row">
       <span class="audit-time">${escapeHtml(row.timestamp)}</span>
-      <span>${escapeHtml(row.action)} · ${escapeHtml(row.actor || '-')}${row.target ? ` → ${escapeHtml(row.target)}` : ''}</span>
+      <span title="${escapeHtml(row.action)}">${escapeHtml(AUDIT_LABELS[row.action] || row.action)} · ${
+        escapeHtml(row.actor === 'system' ? 'ระบบ' : row.actor || '-')}${row.target ? ` → ${escapeHtml(row.target)}` : ''}${
+        row.details ? ` <small>${escapeHtml(row.details)}</small>` : ''}</span>
     </div>`).join('') || '<div class="loading">ยังไม่มีประวัติ</div>';
 
   // ทุกปุ่มทำงานเดียวกัน คือเรียก API แล้วโหลดรายการใหม่ ต่างกันแค่ปลายทางและข้อความยืนยัน
@@ -1644,7 +1758,7 @@ function buildReport({ summary, sources, forecast, impact, micro, recommendation
         ${reportTable(
           [{ label: 'ชุดข้อมูล' }, { label: 'จำนวนระเบียน', num: true }, { label: 'นำเข้าล่าสุด' }],
           sources.map((source) => [
-            escapeHtml(source.name),
+            escapeHtml(source.label || source.name),
             source.records ? numberFormat.format(source.records) : '—',
             escapeHtml(source.last_imported_at || 'ยังไม่นำเข้า'),
           ])

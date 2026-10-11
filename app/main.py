@@ -300,6 +300,47 @@ def logout(request: Request, response: Response) -> dict:
     return {"ok": True}
 
 
+@app.post("/api/auth/password")
+def change_password(request: Request, payload: dict = Body(...)) -> dict:
+    """ผู้ใช้เปลี่ยนรหัสผ่านของตัวเอง ต้องยืนยันด้วยรหัสปัจจุบันเสมอ
+
+    เรียกได้สองทาง: จากในระบบ (ใช้ session บอกว่าเป็นใคร) และจากหน้าเข้าสู่ระบบ (ส่ง username มาด้วย ไม่ต้องล็อกอินก่อน)
+    ทั้งสองทางพิสูจน์ตัวด้วยรหัสปัจจุบันเหมือนกัน คนที่ลืมรหัสปัจจุบันยังต้องให้ผู้ดูแลรีเซ็ตให้
+    """
+    client = request.client.host if request.client else "unknown"
+    current = str(payload.get("current_password", ""))
+    new = str(payload.get("new_password", ""))
+    session_user = auth.load_user(request)
+    username = session_user["username"] if session_user else str(payload.get("username", "")).strip()
+    if auth.password_guesses_exhausted(client):
+        raise HTTPException(status_code=429, detail="ใส่รหัสผ่านผิดหลายครั้งเกินไป กรุณารอหนึ่งชั่วโมงแล้วลองใหม่")
+    row = query_one("SELECT id, username, password_hash, status FROM users WHERE username = %s", [username])
+    if not row or not auth.verify_password(current, row["password_hash"]):
+        auth.record_password_guess(client)
+        audit("change_password_failed", username or "(ไม่ระบุ)", details=f"จาก {client}")
+        # จากหน้าเข้าสู่ระบบ ไม่บอกว่าผิดที่ชื่อผู้ใช้หรือรหัสผ่าน เหตุผลเดียวกับตอนล็อกอิน
+        raise HTTPException(status_code=400, detail=(
+            "รหัสผ่านปัจจุบันไม่ถูกต้อง" if session_user else "ชื่อผู้ใช้หรือรหัสผ่านปัจจุบันไม่ถูกต้อง"
+        ))
+    # บัญชีที่รออนุมัติหรือถูกระงับเปลี่ยนรหัสไม่ได้ ตรวจหลังรหัสผ่านถูกแล้วเท่านั้น จะได้ไม่บอกใบ้ว่ามีบัญชีนี้อยู่
+    if row["status"] != auth.STATUS_ACTIVE:
+        raise HTTPException(status_code=403, detail="บัญชีนี้ยังใช้งานไม่ได้ กรุณาติดต่อผู้ดูแลระบบ")
+    if len(new) < 8:
+        raise HTTPException(status_code=400, detail="รหัสผ่านใหม่ต้องยาวอย่างน้อย 8 ตัวอักษร")
+    if new == current:
+        raise HTTPException(status_code=400, detail="รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสเดิม")
+    query("UPDATE users SET password_hash = %s WHERE id = %s", [auth.hash_password(new), row["id"]])
+    # ตัด session ที่ค้างอยู่ทั้งหมด ยกเว้นเครื่องที่กดเปลี่ยนจากในระบบ ถ้ารหัสเดิมรั่ว คนที่ล็อกอินค้างไว้ที่อื่นจะหลุดทันที
+    removed = query(
+        "DELETE FROM user_sessions WHERE user_id = %s AND token_hash <> %s RETURNING token_hash",
+        [row["id"], auth.hash_token(request.cookies.get(auth.SESSION_COOKIE, "")) if session_user else ""],
+    )
+    audit("change_password", row["username"], details=(
+        f"{'จากในระบบ' if session_user else 'จากหน้าเข้าสู่ระบบ'} · ยกเลิก session ที่ค้างอยู่ {len(removed)} รายการ"
+    ))
+    return {"ok": True, "other_sessions_removed": len(removed)}
+
+
 @app.get("/api/auth/me")
 def me(request: Request) -> dict:
     """หน้าเว็บเรียกตอนเปิดหน้า เพื่อรู้ว่าต้องแสดงหน้าล็อกอินหรือซ่อนส่วนไหนบ้าง
@@ -664,11 +705,37 @@ def summary(_: dict = Depends(auth.require("view:overview"))) -> dict:
     }
 
 
+# แหล่งข้อมูลถูกบันทึกด้วยชื่อไฟล์หรือชื่อ API ซึ่งคนนอกอ่านไม่รู้เรื่อง (เช่น "172-") ป้ายด้านล่างใช้ตอนแสดงผลเท่านั้น
+DATASET_TABLE_LABELS = {
+    "tourism_monthly": "นักท่องเที่ยวลงเกาะล้านรายเดือน",
+    "demographic_profiles": "ประชากรแฝงของเมืองพัทยา",
+    "zone_traffic_volume": "ปริมาณรถรายแยก",
+    "boat_passengers_monthly": "ผู้โดยสารเรือไปเกาะล้าน",
+    "air_quality_monthly": "ฝุ่น PM2.5 รายเดือน",
+    "island_waste_monthly": "ขยะเกาะล้าน",
+    "city_revenue_yearly": "รายได้ของเมืองรายปีงบประมาณ",
+    "raw_excel_cells": "รายงาน Excel ของจังหวัดชลบุรี",
+}
+API_SOURCE_LABELS = {
+    "Open-Meteo Archive (ERA5)": "สภาพอากาศรายวันย้อนหลัง",
+    HOLIDAY_SOURCE: "วันหยุดและเทศกาลของไทย",
+    "World Holidays API (TH)": "วันหยุดของไทย (แหล่งสำรอง)",
+    "OpenStreetMap Overpass API": "สถานที่ท่องเที่ยวและธุรกิจ",
+}
+
+
 @app.get("/api/sources")
 def sources(_: dict = Depends(auth.require("view:sources"))) -> list[dict]:
     """แหล่งที่มาของข้อมูลทุกชุดที่นำเข้า ใช้แสดงการอ้างอิงบนแดชบอร์ด"""
+    # ไฟล์ไหนเป็นชุดข้อมูลอะไร ดูจากว่าตอนนี้แถวของไฟล์นั้นอยู่ในตารางไหน ไฟล์ที่ถูกไฟล์อื่นแทนที่ไปหมดแล้วจะไม่มีป้าย
+    file_labels = {
+        Path(row["source_file"]).stem: row["label"]
+        for row in query(" UNION ALL ".join(
+            f"SELECT DISTINCT source_file, '{label}' AS label FROM {table}" for table, label in DATASET_TABLE_LABELS.items()
+        ))
+    }
     # นำเข้าซ้ำได้หลายครั้ง จึงรายงานยอดของครั้งล่าสุดเท่านั้น ไม่ใช่ผลรวมสะสมของทุกครั้ง
-    return query(
+    rows = query(
         """SELECT s.name, s.source_type, s.endpoint,
                   to_char(latest.imported_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD HH24:MI:SS')
                       AS last_imported_at,
@@ -681,6 +748,10 @@ def sources(_: dict = Depends(auth.require("view:sources"))) -> list[dict]:
            )
            ORDER BY s.name"""
     )
+    for row in rows:
+        row["label"] = API_SOURCE_LABELS.get(row["name"]) or file_labels.get(row["name"])
+    # ชุดที่รู้ว่าเป็นอะไรขึ้นก่อน เรียงตามชื่อไทย
+    return sorted(rows, key=lambda row: (row["label"] is None, row["label"] or row["name"]))
 
 
 # ---------------------------------------------------------------- โซน / แยก (แผนที่)
