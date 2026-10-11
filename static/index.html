@@ -3,12 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pattaya Signal / Smart Tourism</title>
+  <title>Pattaya Smart Tourism</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
   <link rel="stylesheet" href="/static/styles.css" />
+  <!-- ไอคอนบนแท็บ ฝังเป็น SVG ในหน้าเลย ไม่ต้องมีไฟล์รูปแยก -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23ee745b'/%3E%3Cpath d='M11 8h7a5.5 5.5 0 0 1 0 11h-3.4v5H11zm3.6 3.2v4.6H18a2.3 2.3 0 0 0 0-4.6z' fill='white'/%3E%3C/svg%3E">
 </head>
 <body>
   <!-- หน้าเข้าสู่ระบบ ซ่อนแดชบอร์ดทั้งหมดจนกว่าจะยืนยันตัวตนผ่าน -->
@@ -20,8 +22,24 @@
       <label>ชื่อผู้ใช้<input type="text" id="login-username" autocomplete="username" required></label>
       <label>รหัสผ่าน<input type="password" id="login-password" autocomplete="current-password" required></label>
       <p class="login-error" id="login-error" hidden></p>
+      <p class="login-success" id="login-notice" hidden></p>
       <button type="submit" id="login-submit">เข้าสู่ระบบ</button>
-      <p class="login-switch">ยังไม่มีบัญชี? <button type="button" id="show-register">สมัครสมาชิก</button></p>
+      <p class="login-switch">ยังไม่มีบัญชี? <button type="button" id="show-register">สมัครสมาชิก</button>
+        · <button type="button" id="show-password">เปลี่ยนรหัสผ่าน</button></p>
+    </form>
+
+    <form class="login-card" id="login-password-form" hidden>
+      <div class="brand-mark">P</div>
+      <h1>เปลี่ยนรหัสผ่าน</h1>
+      <p class="login-sub">ใช้รหัสผ่านปัจจุบันยืนยันตัว ถ้าลืมรหัสปัจจุบัน ต้องให้ผู้ดูแลระบบตั้งรหัสใหม่ให้</p>
+      <label>ชื่อผู้ใช้<input type="text" id="lp-username" autocomplete="username" required></label>
+      <label>รหัสผ่านปัจจุบัน<input type="password" id="lp-current" autocomplete="current-password" required></label>
+      <label>รหัสผ่านใหม่ <span class="hint">อย่างน้อย 8 ตัวอักษร</span>
+        <input type="password" id="lp-new" autocomplete="new-password" required minlength="8"></label>
+      <label>ยืนยันรหัสผ่านใหม่<input type="password" id="lp-confirm" autocomplete="new-password" required minlength="8"></label>
+      <p class="login-error" id="lp-error" hidden></p>
+      <button type="submit" id="lp-submit">บันทึกรหัสผ่านใหม่</button>
+      <p class="login-switch"><button type="button" id="show-login-from-password">กลับไปหน้าเข้าสู่ระบบ</button></p>
     </form>
 
     <form class="login-card" id="register-form" hidden>
@@ -93,22 +111,22 @@
       </section>
 
       <section class="kpi-grid" data-page="overview">
-        <article class="kpi-card accent-coral">
+        <article class="kpi-card accent-coral" data-goto="forecast">
           <div class="kpi-head"><span>นักท่องเที่ยวลงเกาะล้าน</span><span class="kpi-symbol">◎</span></div>
           <strong id="kpi-tourists">—</strong>
           <div class="kpi-foot"><span id="kpi-tourists-delta" class="neutral">—</span><span id="kpi-tourists-note">—</span></div>
         </article>
-        <article class="kpi-card accent-blue">
+        <article class="kpi-card accent-blue" data-goto="spatial">
           <div class="kpi-head"><span>ปริมาณรถทั้งเมือง</span><span class="kpi-symbol">⛗</span></div>
           <strong id="kpi-traffic">—</strong>
           <div class="kpi-foot"><span id="kpi-traffic-note">—</span></div>
         </article>
-        <article class="kpi-card accent-yellow">
+        <article class="kpi-card accent-yellow" data-goto="spatial">
           <div class="kpi-head"><span>สถานที่ท่องเที่ยว/ธุรกิจ</span><span class="kpi-symbol">⌖</span></div>
           <strong id="kpi-poi">—</strong>
           <div class="kpi-foot"><span id="kpi-poi-note">—</span></div>
         </article>
-        <article class="kpi-card accent-green">
+        <article class="kpi-card accent-green" data-goto="context">
           <div class="kpi-head"><span>ประชากรแฝงพัทยา</span><span class="kpi-symbol">☖</span></div>
           <strong id="kpi-population">—</strong>
           <div class="kpi-foot"><span id="kpi-population-note">—</span></div>
@@ -137,6 +155,7 @@
             <span class="chart-note">คน/เดือน · คัน/เดือน</span>
           </div>
           <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
+          <p class="chart-key"><span><i class="line" style="--c:#ee745b"></i>นักท่องเที่ยวลงเกาะล้าน อ่านค่าที่แกนซ้าย</span><span><i class="bar" style="--c:#4b90a9"></i>ปริมาณรถทั้งเมือง อ่านค่าที่แกนขวา</span><span class="key-note">ปริมาณรถมีข้อมูลตั้งแต่ปี 2024 ช่วงก่อนหน้าจึงไม่มีแท่ง</span></p>
         </article>
         <article class="panel">
           <div class="panel-heading"><div><p class="eyebrow">7 วันข้างหน้า</p><h2>วันหยุดและพยากรณ์อากาศ 7 วัน</h2></div></div>
@@ -199,8 +218,12 @@
           </div>
         </article>
         <article class="panel ranking-panel">
-          <div class="panel-heading"><div><p class="eyebrow">จราจร</p><h2>แยกที่มีปริมาณรถสูงสุด</h2></div></div>
+          <div class="panel-heading">
+            <div><p class="eyebrow">จราจร</p><h2>แยกที่มีปริมาณรถสูงสุด</h2></div>
+            <label class="select-wrap"><span>ช่วง</span><select id="traffic-year"></select></label>
+          </div>
           <div id="ranking-list" class="ranking-list"><div class="loading">กำลังอ่านข้อมูล...</div></div>
+          <p class="caveat" id="ranking-note"></p>
         </article>
       </section>
 
@@ -216,6 +239,7 @@
         <article class="panel chart-panel">
           <div class="panel-heading"><div><p class="eyebrow">ความหนาแน่น</p><h2>ความหนาแน่นธุรกิจต่อตร.กม.</h2></div></div>
           <div class="chart-wrap short"><canvas id="zone-chart"></canvas></div>
+          <p class="chart-key"><span><i class="bar" style="--c:#4b90a9"></i>เบาบาง</span><span><i class="bar" style="--c:#5da17d"></i>ค่อนข้างน้อย</span><span><i class="bar" style="--c:#e5b84d"></i>ปานกลาง</span><span><i class="bar" style="--c:#c33f2c"></i>หนาแน่นที่สุด</span><span class="key-note">สีเดียวกับวงเส้นประบนแผนที่</span></p>
         </article>
       </section>
 
@@ -237,6 +261,7 @@
             <span class="chart-note">% เทียบค่าเฉลี่ยทั้งปี</span>
           </div>
           <div class="chart-wrap"><canvas id="season-chart"></canvas></div>
+          <p class="chart-key"><span><i class="bar" style="--c:#ee745b"></i>เดือนที่คนมากกว่าค่าเฉลี่ยทั้งปี</span><span><i class="bar" style="--c:#4b90a9"></i>เดือนที่คนน้อยกว่าค่าเฉลี่ย</span><span class="key-note">เส้น 0% คือค่าเฉลี่ยทั้งปี เฉลี่ยจากทุกปีที่มีข้อมูล</span></p>
         </article>
         <article class="panel chart-panel">
           <div class="panel-heading">
@@ -244,6 +269,7 @@
             <span class="chart-note">ผู้โดยสารเรือโดยสาร สะสม</span>
           </div>
           <div class="chart-wrap"><canvas id="pier-chart"></canvas></div>
+          <p class="chart-key"><span><i class="bar" style="--c:#4b90a9"></i>ขาไป: ผู้โดยสารจากพัทยามาขึ้นเกาะที่ท่านี้</span><span><i class="bar" style="--c:#e5b84d"></i>ขากลับ: ผู้โดยสารออกจากเกาะที่ท่านี้</span><span class="key-note">ถ้าแท่งเหลืองสูงกว่าแท่งฟ้า แปลว่าคนนิยมใช้ท่านี้ตอนกลับมากกว่าตอนมา</span></p>
         </article>
       </section>
 
@@ -254,6 +280,7 @@
             <span class="chart-note">คน/เดือน</span>
           </div>
           <div class="chart-wrap"><canvas id="boat-chart"></canvas></div>
+          <p class="chart-key"><span><i class="bar" style="--c:#e5b84d"></i>ผู้โดยสารเรือ แยกสีตามประเภทเรือ อ่านค่าที่แกนซ้าย</span><span><i class="line" style="--c:#ee745b"></i>นักท่องเที่ยวลงเกาะล้าน อ่านค่าที่แกนขวา</span></p>
           <p class="caveat" id="boat-caveats"></p>
         </article>
         <article class="panel ranking-panel">
@@ -269,6 +296,7 @@
             <span class="chart-note" id="forecast-model">—</span>
           </div>
           <div class="chart-wrap"><canvas id="forecast-chart"></canvas></div>
+          <p class="chart-key"><span><i class="line" style="--c:#ee745b"></i>จำนวนจริงที่ผ่านมา</span><span><i class="dash" style="--c:#1f7fa3"></i>พยากรณ์ของวิธีที่ระบบเลือก</span><span><i class="band" style="--c:#1f7fa3"></i>ช่วงที่ค่าจริงน่าจะอยู่ (95%) ยิ่งไกลยิ่งกว้าง</span><span><i class="dash" style="--c:#9b7fb5"></i>พยากรณ์ของอีกแนวทาง ไว้เทียบ</span></p>
           <div class="accuracy-strip" id="forecast-accuracy"></div>
           <div class="forecast-table" id="forecast-table"></div>
           <p class="caveat" id="forecast-caveats"></p>
@@ -280,6 +308,7 @@
           </div>
           <div class="impact-tiles" id="impact-tiles"><div class="loading">กำลังวิเคราะห์...</div></div>
           <div class="chart-wrap short"><canvas id="impact-chart"></canvas></div>
+          <p class="chart-key"><span><i class="dot" style="--c:#1f7fa3"></i>หนึ่งจุดคือหนึ่งเดือน</span><span><i class="line" style="--c:#ee745b"></i>เส้นแนวโน้ม</span><span class="key-note">จุดยิ่งไปทางขวา ฝนยิ่งมากกว่าปกติของเดือนนั้น · จุดสูงกว่า 1.0 คือคนมากกว่าที่คาด · เส้นลาดลงแปลว่าฝนมากมักมากับคนน้อย</span></p>
           <p class="caveat" id="impact-caveats"></p>
         </article>
       </section>
@@ -301,6 +330,7 @@
             <span class="chart-note" id="waste-note">—</span>
           </div>
           <div class="chart-wrap"><canvas id="waste-chart"></canvas></div>
+          <p class="chart-key"><span><i class="bar" style="--c:#5da17d"></i>ขยะที่เก็บได้บนเกาะ (ตัน) อ่านค่าที่แกนซ้าย</span><span><i class="line" style="--c:#ee745b"></i>นักท่องเที่ยว อ่านค่าที่แกนขวา</span><span class="key-note">ตัวเลข r มุมขวาบน ยิ่งใกล้ 1 แปลว่าสองเส้นขึ้นลงไปด้วยกันมาก</span></p>
           <p class="caveat" id="waste-caveats"></p>
         </article>
         <article class="panel chart-panel">
@@ -309,7 +339,8 @@
             <span class="chart-note" id="air-note">—</span>
           </div>
           <div class="chart-wrap"><canvas id="air-chart"></canvas></div>
-          <p class="caveat">ค่าเฉลี่ยรายเดือนจากจุดตรวจวัดในเขตเมืองพัทยา เส้นคือจำนวนวันในเดือนที่ค่าเกินมาตรฐาน ตามที่ต้นทางรายงาน</p>
+          <p class="chart-key"><span><i class="bar" style="--c:#9b7fb5"></i>ค่าเฉลี่ย PM2.5 ของเดือน อ่านค่าที่แกนซ้าย</span><span><i class="line" style="--c:#ee745b"></i>จำนวนวันที่ค่าเกินมาตรฐาน อ่านค่าที่แกนขวา</span></p>
+          <p class="caveat">ค่าเฉลี่ยรายเดือนจากจุดตรวจวัดในเขตเมืองพัทยา จำนวนวันที่เกินมาตรฐานนับตามที่ต้นทางรายงาน</p>
         </article>
       </section>
 
@@ -320,6 +351,7 @@
             <span class="chart-note" id="revenue-note">—</span>
           </div>
           <div class="chart-wrap"><canvas id="revenue-chart"></canvas></div>
+          <p class="chart-key"><span class="key-note">แต่ละแท่งคือหนึ่งปีงบประมาณ แบ่งสีตามหมวดรายได้ ความสูงรวมของแท่งคือรายได้ทั้งปี</span></p>
           <p class="caveat" id="revenue-caveats"></p>
         </article>
         <article class="panel ranking-panel">
@@ -374,6 +406,7 @@
             <span class="sample-tag" data-sample-tag hidden>ข้อมูลสมมติเพื่อสาธิต</span>
           </div>
           <div class="chart-wrap"><canvas id="business-chart"></canvas></div>
+          <p class="chart-key"><span><i class="bar" style="--c:#4b90a9"></i>รายได้ของธุรกิจ (บาท) อ่านค่าที่แกนซ้าย</span><span><i class="line" style="--c:#ee745b"></i>นักท่องเที่ยวของเมือง อ่านค่าที่แกนขวา</span></p>
           <div class="impact-tiles" id="business-links" style="margin-top:14px"></div>
           <p class="caveat" id="business-caveats"></p>
         </article>

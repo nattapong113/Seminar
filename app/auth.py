@@ -56,15 +56,38 @@ SIGNUP_LIMIT, SIGNUP_WINDOW_SECONDS = 5, 3600
 _signup_attempts: dict[str, list[float]] = {}
 
 
-def signup_allowed(client: str) -> bool:
+def _allowed(attempts: dict[str, list[float]], client: str, limit: int, window_seconds: int) -> bool:
     import time
     now = time.time()
-    recent = [t for t in _signup_attempts.get(client, []) if now - t < SIGNUP_WINDOW_SECONDS]
-    _signup_attempts[client] = recent
-    if len(recent) >= SIGNUP_LIMIT:
+    recent = [t for t in attempts.get(client, []) if now - t < window_seconds]
+    attempts[client] = recent
+    if len(recent) >= limit:
         return False
     recent.append(now)
     return True
+
+
+def signup_allowed(client: str) -> bool:
+    return _allowed(_signup_attempts, client, SIGNUP_LIMIT, SIGNUP_WINDOW_SECONDS)
+
+
+# การเปลี่ยนรหัสผ่านจากหน้าเข้าสู่ระบบไม่ต้องล็อกอินก่อน จึงเป็นช่องให้ไล่เดารหัสผ่านได้ จำกัดจำนวนครั้งที่ใส่ผิดต่อ IP
+PASSWORD_GUESS_LIMIT, PASSWORD_GUESS_WINDOW_SECONDS = 10, 3600
+_password_guesses: dict[str, list[float]] = {}
+
+
+def password_guesses_exhausted(client: str) -> bool:
+    """ใส่ผิดครบโควตาแล้วหรือยัง ต้องเช็กก่อนตรวจรหัสผ่านทุกครั้ง
+
+    ถ้าเช็กเฉพาะตอนใส่ผิด คนที่ไล่เดาจะยังเดาต่อได้ไม่จำกัด เพราะครั้งที่เดาถูกจะผ่านไปได้เสมอ
+    """
+    import time
+    now = time.time()
+    return len([t for t in _password_guesses.get(client, []) if now - t < PASSWORD_GUESS_WINDOW_SECONDS]) >= PASSWORD_GUESS_LIMIT
+
+
+def record_password_guess(client: str) -> None:
+    _allowed(_password_guesses, client, PASSWORD_GUESS_LIMIT, PASSWORD_GUESS_WINDOW_SECONDS)
 
 # ---------------------------------------------------------------- รหัสผ่าน
 
