@@ -63,7 +63,7 @@
         <a class="nav-item" data-page="data" data-permission="manage:data" href="#data"><span class="nav-icon">⇪</span>จัดการข้อมูล</a>
         <a class="nav-item" data-page="admin" data-permission="manage:users" href="#admin"><span class="nav-icon">⚿</span>จัดการผู้ใช้</a>
       </nav>
-      <div class="sidebar-bottom"><div class="live-dot"></div><div><strong>DATA STREAM</strong><span id="stream-status">กำลังเชื่อมต่อ...</span></div></div>
+      <div class="sidebar-bottom"><div class="live-dot"></div><div><strong>สถานะข้อมูล</strong><span id="stream-status">กำลังเชื่อมต่อ...</span></div></div>
     </aside>
 
     <!-- แต่ละ section มี data-page บอกว่าอยู่หน้าไหน เมนูซ้ายสลับหน้าโดยซ่อน section ของหน้าอื่น (ดู showPage ใน app.js) -->
@@ -82,6 +82,8 @@
           <button class="icon-btn" id="logout-btn" title="ออกจากระบบ">⏻</button>
         </div>
       </header>
+
+      <div class="loading-banner" id="loading-banner" hidden><i></i>กำลังโหลดและคำนวณข้อมูล บางส่วนใช้เวลาสักครู่...</div>
 
       <section class="toolbar" data-page="overview">
         <div class="date-chip"><span>ข้อมูลนักท่องเที่ยว</span><strong id="tourism-range">—</strong></div>
@@ -116,7 +118,7 @@
       <section class="content-grid single" data-page="overview" id="ai-section" hidden>
         <article class="panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">AI SUMMARY</p><h2>บทสรุปสำหรับผู้บริหาร</h2></div>
+            <div><p class="eyebrow">สรุปโดย AI</p><h2>บทสรุปสำหรับผู้บริหาร</h2></div>
             <div class="panel-heading-right">
               <span class="chart-note" id="ai-meta">—</span>
               <button class="approve-btn" id="ai-generate" data-permission="manage:data">สรุปใหม่</button>
@@ -131,13 +133,13 @@
       <section class="content-grid lower-grid" data-page="overview">
         <article class="panel chart-panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">VISITOR FLOW</p><h2>นักท่องเที่ยวรายเดือน เทียบปริมาณรถ</h2></div>
+            <div><p class="eyebrow">แนวโน้ม</p><h2>นักท่องเที่ยวรายเดือน เทียบปริมาณรถ</h2></div>
             <span class="chart-note">คน/เดือน · คัน/เดือน</span>
           </div>
           <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
         </article>
         <article class="panel">
-          <div class="panel-heading"><div><p class="eyebrow">UPCOMING</p><h2>วันหยุดและพยากรณ์อากาศ 7 วัน</h2></div></div>
+          <div class="panel-heading"><div><p class="eyebrow">7 วันข้างหน้า</p><h2>วันหยุดและพยากรณ์อากาศ 7 วัน</h2></div></div>
           <div class="forecast-strip" id="forecast-strip"><div class="loading">กำลังอ่านพยากรณ์...</div></div>
           <div class="holiday-list" id="holiday-list"></div>
         </article>
@@ -146,17 +148,18 @@
       <section class="content-grid single" data-page="overview" data-permission="view:recommendations">
         <article class="panel recommendation-panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">DECISION SIGNALS</p><h2>คำแนะนำเชิงปฏิบัติ</h2></div>
+            <div><p class="eyebrow">สิ่งที่ควรทำ</p><h2>คำแนะนำเชิงปฏิบัติ</h2></div>
             <span class="chart-note" id="recommendation-note">—</span>
           </div>
           <div id="recommendation-list" class="recommendation-list is-grid"><div class="loading">กำลังประมวลผล...</div></div>
+          <button class="more-btn" id="recommendation-more" hidden></button>
         </article>
       </section>
 
       <section class="content-grid" data-page="spatial" data-permission="view:spatial">
         <article class="panel map-panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">SPATIAL BEHAVIOR</p><h2>ความหนาแน่นเชิงพื้นที่</h2></div>
+            <div><p class="eyebrow">แผนที่</p><h2>ความหนาแน่นเชิงพื้นที่</h2></div>
             <div class="layer-toggle">
               <label><input type="checkbox" id="layer-zone" checked> ย่านท่องเที่ยว</label>
               <label><input type="checkbox" id="layer-poi" checked> ธุรกิจท่องเที่ยว</label>
@@ -166,11 +169,37 @@
           <div id="map"></div>
           <div class="map-caption">
             <span><b id="map-poi-count">—</b> สถานที่ (OpenStreetMap) · <b id="map-zone-count">—</b> แยกที่มีพิกัด</span>
-            <span>ความร้อน = ความหนาแน่นธุรกิจ · ขนาดวงกลม = ปริมาณรถ · วงประ = ขอบเขตย่าน</span>
+          </div>
+          <!-- สีในคำอธิบายต้องตรงกับที่ใช้วาดใน app.js: renderMap (ความร้อน, วงกลมรถ) และ zoneColor (วงย่าน) -->
+          <div class="map-legend">
+            <div class="legend-row">
+              <strong>พื้นสีบนแผนที่</strong>
+              <span class="legend-ramp"></span>
+              <span class="legend-ends"><em>ธุรกิจท่องเที่ยวเบาบาง</em><em>หนาแน่นมาก</em></span>
+            </div>
+            <div class="legend-row">
+              <strong>วงกลมทึบ = แยกจราจร</strong>
+              <span class="legend-items">
+                <span><i class="dot" style="background:#4b90a9"></i>รถน้อย</span>
+                <span><i class="dot" style="background:#e5b84d"></i>ปานกลาง</span>
+                <span><i class="dot" style="background:#c33f2c"></i>รถมาก</span>
+                <span class="legend-note">วงยิ่งใหญ่ รถยิ่งมาก (เทียบกับแยกที่รถมากที่สุด)</span>
+              </span>
+            </div>
+            <div class="legend-row">
+              <strong>วงเส้นประ = ขอบเขตย่าน</strong>
+              <span class="legend-items">
+                <span><i class="ring" style="border-color:#4b90a9"></i>ธุรกิจเบาบาง</span>
+                <span><i class="ring" style="border-color:#5da17d"></i>ค่อนข้างน้อย</span>
+                <span><i class="ring" style="border-color:#e5b84d"></i>ปานกลาง</span>
+                <span><i class="ring" style="border-color:#c33f2c"></i>หนาแน่นที่สุด</span>
+                <span class="legend-note">ตามจำนวนธุรกิจต่อ ตร.กม. เทียบกับย่านที่หนาแน่นที่สุด</span>
+              </span>
+            </div>
           </div>
         </article>
         <article class="panel ranking-panel">
-          <div class="panel-heading"><div><p class="eyebrow">TRAFFIC BY INTERSECTION</p><h2>แยกที่มีปริมาณรถสูงสุด</h2></div></div>
+          <div class="panel-heading"><div><p class="eyebrow">จราจร</p><h2>แยกที่มีปริมาณรถสูงสุด</h2></div></div>
           <div id="ranking-list" class="ranking-list"><div class="loading">กำลังอ่านข้อมูล...</div></div>
         </article>
       </section>
@@ -178,14 +207,14 @@
       <section class="content-grid lower-grid" data-page="spatial" data-permission="view:spatial">
         <article class="panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">MICRO-ZONING</p><h2>การกระจายตัวรายย่าน</h2></div>
+            <div><p class="eyebrow">รายย่าน</p><h2>การกระจายตัวรายย่าน</h2></div>
             <span class="chart-note" id="zone-note">—</span>
           </div>
           <div id="zone-table" class="zone-table"><div class="loading">กำลังแบ่งย่าน...</div></div>
           <p class="caveat" id="zone-caveats"></p>
         </article>
         <article class="panel chart-panel">
-          <div class="panel-heading"><div><p class="eyebrow">ZONE DENSITY</p><h2>ความหนาแน่นธุรกิจต่อตร.กม.</h2></div></div>
+          <div class="panel-heading"><div><p class="eyebrow">ความหนาแน่น</p><h2>ความหนาแน่นธุรกิจต่อตร.กม.</h2></div></div>
           <div class="chart-wrap short"><canvas id="zone-chart"></canvas></div>
         </article>
       </section>
@@ -193,7 +222,7 @@
       <section class="content-grid single" data-page="behavior">
         <article class="panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">TRAVEL BEHAVIOR</p><h2>ข้อค้นพบด้านพฤติกรรมการเดินทาง</h2></div>
+            <div><p class="eyebrow">ข้อค้นพบ</p><h2>ข้อค้นพบด้านพฤติกรรมการเดินทาง</h2></div>
             <span class="chart-note">นักท่องเที่ยวเกาะล้าน · ระดับกลุ่ม</span>
           </div>
           <div id="behavior-insights" class="insight-list"><div class="loading">กำลังวิเคราะห์...</div></div>
@@ -204,14 +233,14 @@
       <section class="content-grid even-grid" data-page="behavior">
         <article class="panel chart-panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">WHEN</p><h2>เดินทางช่วงไหนของปี</h2></div>
+            <div><p class="eyebrow">ช่วงเวลา</p><h2>เดินทางช่วงไหนของปี</h2></div>
             <span class="chart-note">% เทียบค่าเฉลี่ยทั้งปี</span>
           </div>
           <div class="chart-wrap"><canvas id="season-chart"></canvas></div>
         </article>
         <article class="panel chart-panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">WHERE</p><h2>ขึ้นเกาะและกลับที่ท่าไหน</h2></div>
+            <div><p class="eyebrow">ท่าเรือ</p><h2>ขึ้นเกาะและกลับที่ท่าไหน</h2></div>
             <span class="chart-note">ผู้โดยสารเรือโดยสาร สะสม</span>
           </div>
           <div class="chart-wrap"><canvas id="pier-chart"></canvas></div>
@@ -221,14 +250,14 @@
       <section class="content-grid lower-grid" data-page="behavior">
         <article class="panel chart-panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">FERRY &amp; SPEEDBOAT</p><h2>ผู้โดยสารเรือไปเกาะล้าน เทียบนักท่องเที่ยว</h2></div>
+            <div><p class="eyebrow">เรือโดยสาร</p><h2>ผู้โดยสารเรือไปเกาะล้าน เทียบนักท่องเที่ยว</h2></div>
             <span class="chart-note">คน/เดือน</span>
           </div>
           <div class="chart-wrap"><canvas id="boat-chart"></canvas></div>
           <p class="caveat" id="boat-caveats"></p>
         </article>
         <article class="panel ranking-panel">
-          <div class="panel-heading"><div><p class="eyebrow">ROUTES</p><h2>ผู้โดยสารรายเส้นทาง</h2></div></div>
+          <div class="panel-heading"><div><p class="eyebrow">เส้นทาง</p><h2>ผู้โดยสารรายเส้นทาง</h2></div></div>
           <div id="route-list" class="ranking-list"><div class="loading">กำลังอ่านข้อมูล...</div></div>
         </article>
       </section>
@@ -236,7 +265,7 @@
       <section class="content-grid lower-grid" data-page="forecast" data-permission="view:forecast">
         <article class="panel chart-panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">FORECAST</p><h2>พยากรณ์นักท่องเที่ยวรายเดือน</h2></div>
+            <div><p class="eyebrow">พยากรณ์</p><h2>พยากรณ์นักท่องเที่ยวรายเดือน</h2></div>
             <span class="chart-note" id="forecast-model">—</span>
           </div>
           <div class="chart-wrap"><canvas id="forecast-chart"></canvas></div>
@@ -246,7 +275,7 @@
         </article>
         <article class="panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">IMPACT</p><h2>ผลของฝนและวันหยุด</h2></div>
+            <div><p class="eyebrow">ปัจจัยที่มีผล</p><h2>ผลของฝนและวันหยุด</h2></div>
             <span class="chart-note">หลังตัดฤดูกาลออก</span>
           </div>
           <div class="impact-tiles" id="impact-tiles"><div class="loading">กำลังวิเคราะห์...</div></div>
@@ -258,7 +287,7 @@
       <section class="content-grid single" data-page="forecast" data-permission="view:forecast">
         <article class="panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">MODEL COMPARISON</p><h2>เปรียบเทียบวิธีพยากรณ์</h2></div>
+            <div><p class="eyebrow">ความแม่นของแบบจำลอง</p><h2>เปรียบเทียบวิธีพยากรณ์</h2></div>
             <span class="chart-note">ความคลาดเคลื่อนเฉลี่ย · ยิ่งต่ำยิ่งแม่น</span>
           </div>
           <div class="model-table" id="forecast-comparison"></div>
@@ -268,7 +297,7 @@
       <section class="content-grid even-grid" data-page="island">
         <article class="panel chart-panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">ISLAND WASTE</p><h2>ขยะเกาะล้าน เทียบนักท่องเที่ยว</h2></div>
+            <div><p class="eyebrow">ขยะ</p><h2>ขยะเกาะล้าน เทียบนักท่องเที่ยว</h2></div>
             <span class="chart-note" id="waste-note">—</span>
           </div>
           <div class="chart-wrap"><canvas id="waste-chart"></canvas></div>
@@ -276,7 +305,7 @@
         </article>
         <article class="panel chart-panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">AIR QUALITY</p><h2>ฝุ่น PM2.5 รายเดือน</h2></div>
+            <div><p class="eyebrow">คุณภาพอากาศ</p><h2>ฝุ่น PM2.5 รายเดือน</h2></div>
             <span class="chart-note" id="air-note">—</span>
           </div>
           <div class="chart-wrap"><canvas id="air-chart"></canvas></div>
@@ -287,14 +316,14 @@
       <section class="content-grid lower-grid" data-page="context">
         <article class="panel chart-panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">CITY REVENUE</p><h2>รายได้ของเมืองพัทยารายปีงบประมาณ</h2></div>
+            <div><p class="eyebrow">รายได้ของเมือง</p><h2>รายได้ของเมืองพัทยารายปีงบประมาณ</h2></div>
             <span class="chart-note" id="revenue-note">—</span>
           </div>
           <div class="chart-wrap"><canvas id="revenue-chart"></canvas></div>
           <p class="caveat" id="revenue-caveats"></p>
         </article>
         <article class="panel ranking-panel">
-          <div class="panel-heading"><div><p class="eyebrow">TOP SOURCES</p><h2>รายได้สูงสุดของปีล่าสุด</h2></div></div>
+          <div class="panel-heading"><div><p class="eyebrow">แหล่งรายได้</p><h2>รายได้สูงสุดของปีล่าสุด</h2></div></div>
           <div id="revenue-list" class="ranking-list"><div class="loading">กำลังอ่านข้อมูล...</div></div>
         </article>
       </section>
@@ -302,13 +331,13 @@
       <section class="content-grid lower-grid" data-page="context">
         <article class="panel" data-permission="view:demographics">
           <div class="panel-heading">
-            <div><p class="eyebrow">POPULATION</p><h2>ประชากรแฝงจำแนกตามกลุ่ม</h2></div>
+            <div><p class="eyebrow">ประชากร</p><h2>ประชากรแฝงจำแนกตามกลุ่ม</h2></div>
             <label class="select-wrap"><span>กลุ่ม</span><select id="demographic-category"></select></label>
           </div>
           <div class="chart-wrap short"><canvas id="demographic-chart"></canvas></div>
         </article>
         <article class="panel" data-permission="view:spatial">
-          <div class="panel-heading"><div><p class="eyebrow">BUSINESS MIX</p><h2>ประเภทธุรกิจท่องเที่ยว</h2></div></div>
+          <div class="panel-heading"><div><p class="eyebrow">ประเภทธุรกิจ</p><h2>ประเภทธุรกิจท่องเที่ยว</h2></div></div>
           <div class="chart-wrap short"><canvas id="poi-chart"></canvas></div>
         </article>
       </section>
@@ -316,7 +345,7 @@
       <section class="content-grid single" data-page="business" data-permission="manage:business">
         <article class="panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">MY BUSINESS</p><h2 id="business-title">ธุรกิจของฉัน</h2></div>
+            <div><p class="eyebrow">ข้อมูลของคุณ</p><h2 id="business-title">ธุรกิจของฉัน</h2></div>
             <div class="panel-heading-right">
               <span class="sample-tag" data-sample-tag hidden>ข้อมูลสมมติเพื่อสาธิต</span>
               <span class="chart-note" id="business-meta">—</span>
@@ -341,7 +370,7 @@
       <section class="content-grid lower-grid" data-page="business" data-permission="manage:business" data-business-detail hidden>
         <article class="panel chart-panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">REVENUE VS CITY</p><h2>รายได้ของธุรกิจ เทียบนักท่องเที่ยวของเมือง</h2></div>
+            <div><p class="eyebrow">เทียบกับเมือง</p><h2>รายได้ของธุรกิจ เทียบนักท่องเที่ยวของเมือง</h2></div>
             <span class="sample-tag" data-sample-tag hidden>ข้อมูลสมมติเพื่อสาธิต</span>
           </div>
           <div class="chart-wrap"><canvas id="business-chart"></canvas></div>
@@ -350,7 +379,7 @@
         </article>
         <article class="panel recommendation-panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">FOR THIS BUSINESS</p><h2>คำแนะนำจากข้อมูลของธุรกิจ</h2></div>
+            <div><p class="eyebrow">สิ่งที่ควรทำ</p><h2>คำแนะนำจากข้อมูลของธุรกิจ</h2></div>
             <span class="sample-tag" data-sample-tag hidden>ข้อมูลสมมติเพื่อสาธิต</span>
           </div>
           <div class="business-ai">
@@ -368,14 +397,14 @@
 
       <section class="content-grid single" data-page="sources" data-permission="view:sources">
         <article class="panel">
-          <div class="panel-heading"><div><p class="eyebrow">PROVENANCE</p><h2>แหล่งข้อมูลที่เชื่อมต่อ</h2></div></div>
+          <div class="panel-heading"><div><p class="eyebrow">ที่มาของข้อมูล</p><h2>แหล่งข้อมูลที่เชื่อมต่อ</h2></div></div>
           <div id="source-list" class="source-list"><div class="loading">กำลังอ่าน...</div></div>
         </article>
       </section>
 
       <section class="content-grid lower-grid" data-page="data" data-permission="manage:data">
         <article class="panel">
-          <div class="panel-heading"><div><p class="eyebrow">DATA IMPORT</p><h2>นำเข้าไฟล์ข้อมูล</h2></div></div>
+          <div class="panel-heading"><div><p class="eyebrow">นำเข้า</p><h2>นำเข้าไฟล์ข้อมูล</h2></div></div>
           <form class="upload-form" id="upload-form">
             <input type="file" id="upload-file" accept=".csv,.xlsx" required>
             <button type="submit" id="upload-submit">นำเข้า</button>
@@ -384,12 +413,12 @@
           <p class="caveat">รองรับไฟล์ CSV ของเมืองพัทยา (นักท่องเที่ยวรายเดือน ประชากรแฝง ปริมาณรถรายแยก ผู้โดยสารเรือ PM2.5 ขยะเกาะล้าน) และรายงาน Excel (.xlsx) ขนาดไม่เกิน 10 MB
             · ไฟล์ที่มีแถวผิดจะไม่ถูกนำเข้าทั้งไฟล์ ข้อมูลเดิมยังอยู่ครบ
             · ไฟล์ใหม่ที่มีช่วงเวลาซ้ำกับไฟล์เดิมจะแทนที่ข้อมูลช่วงนั้น</p>
-          <div class="panel-heading" style="margin-top:18px"><div><p class="eyebrow">IMPORT HISTORY</p><h2>ประวัติการนำเข้า</h2></div></div>
+          <div class="panel-heading" style="margin-top:18px"><div><p class="eyebrow">ประวัติ</p><h2>ประวัติการนำเข้า</h2></div></div>
           <div id="import-list" class="audit-list"><div class="loading">กำลังอ่าน...</div></div>
         </article>
         <article class="panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">AUTO REFRESH</p><h2>อัปเดตข้อมูลอัตโนมัติ</h2></div>
+            <div><p class="eyebrow">อัตโนมัติ</p><h2>อัปเดตข้อมูลอัตโนมัติ</h2></div>
             <span class="chart-note" id="refresh-mode">—</span>
           </div>
           <p class="login-error" id="refresh-error" hidden></p>
@@ -401,7 +430,7 @@
       <section class="content-grid lower-grid" data-page="admin" data-permission="manage:users">
         <article class="panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">USER MANAGEMENT</p><h2>ผู้ใช้งานระบบ</h2></div>
+            <div><p class="eyebrow">บัญชี</p><h2>ผู้ใช้งานระบบ</h2></div>
             <div class="panel-heading-right">
               <span class="chart-note" id="pending-count">—</span>
               <button class="icon-btn" id="add-user-btn" title="เพิ่มผู้ใช้">+</button>
@@ -422,9 +451,9 @@
           <div id="user-list" class="user-list"><div class="loading">กำลังอ่าน...</div></div>
         </article>
         <article class="panel">
-          <div class="panel-heading"><div><p class="eyebrow">ROLES &amp; PERMISSIONS</p><h2>บทบาทและสิทธิ์</h2></div></div>
+          <div class="panel-heading"><div><p class="eyebrow">สิทธิ์</p><h2>บทบาทและสิทธิ์</h2></div></div>
           <div id="role-list" class="role-list"><div class="loading">กำลังอ่าน...</div></div>
-          <div class="panel-heading" style="margin-top:18px"><div><p class="eyebrow">AUDIT LOG</p><h2>ประวัติการใช้งาน</h2></div></div>
+          <div class="panel-heading" style="margin-top:18px"><div><p class="eyebrow">ประวัติ</p><h2>ประวัติการใช้งาน</h2></div></div>
           <div id="audit-list" class="audit-list"><div class="loading">กำลังอ่าน...</div></div>
         </article>
       </section>

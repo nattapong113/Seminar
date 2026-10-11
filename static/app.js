@@ -17,7 +17,18 @@ const postJson = (path, payload) => api(path, {
 });
 
 const numberFormat = new Intl.NumberFormat('th-TH');
-const compactFormat = new Intl.NumberFormat('th-TH', { notation: 'compact', maximumFractionDigits: 2 });
+const THAI_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+// ตัวเลขแบบย่อเป็นหน่วยไทย (หมื่น แสน ล้าน) ตัวจัดรูปแบบของเบราว์เซอร์ให้ K/M/B ซึ่งคนอ่านภาษาไทยต้องแปลในหัวอีกรอบ
+const THAI_UNITS = [[1e9, 'พันล้าน'], [1e6, 'ล้าน'], [1e5, 'แสน'], [1e4, 'หมื่น']];
+const compactFormat = {
+  format(value) {
+    const unit = THAI_UNITS.find(([size]) => Math.abs(value) >= size);
+    if (!unit) return numberFormat.format(Math.round(value * 100) / 100);
+    return `${Number((value / unit[0]).toFixed(2))} ${unit[1]}`;
+  },
+};
+// วันที่ YYYY-MM-DD เป็นแบบที่อ่านง่าย เช่น 13 ต.ค. 2026
+const thaiDate = (iso) => `${Number(iso.slice(8, 10))} ${THAI_MONTHS[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`;
 const charts = {};
 const state = {
   demographics: [], user: null, permissions: [], page: null, mapData: null,
@@ -26,7 +37,6 @@ const state = {
 
 const can = (permission) => state.permissions.includes(permission);
 
-const THAI_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 const PALETTE = ['#ee745b', '#4b90a9', '#e5b84d', '#5da17d', '#9b7fb5', '#c4826a', '#6aaeb0', '#b0616e'];
 const ACTUAL_COLOR = '#ee745b';
 const FORECAST_COLOR = '#1f7fa3';
@@ -54,29 +64,33 @@ function weatherIcon(code) {
 // ---------------------------------------------------------------- KPI
 
 function renderSummary(summary) {
+  // ชุดข้อมูลที่ยังไม่ได้นำเข้าจะมาเป็น null ให้แสดง "—" พร้อมบอกว่ายังไม่มีข้อมูล แทนที่จะพังทั้งหน้า
+  const number = (value) => (value === null || value === undefined ? '—' : numberFormat.format(value));
   const tourism = summary.tourism;
-  setText('kpi-tourists', numberFormat.format(tourism.tourists_year_total));
+  setText('kpi-tourists', number(tourism.tourists_year_total));
   const delta = document.querySelector('#kpi-tourists-delta');
-  if (tourism.year_over_year_percent === null) {
+  if (tourism.year_over_year_percent === null || tourism.year_over_year_percent === undefined) {
     delta.textContent = '—';
   } else {
     const positive = tourism.year_over_year_percent >= 0;
     delta.textContent = `${positive ? '+' : ''}${tourism.year_over_year_percent}%`;
     delta.className = positive ? 'positive' : 'negative';
   }
-  setText('kpi-tourists-note', `รวมทั้งปี ${tourism.year} เทียบปีก่อนหน้า`);
+  setText('kpi-tourists-note', tourism.year ? `รวมทั้งปี ${tourism.year} เทียบปีก่อนหน้า` : 'ยังไม่มีข้อมูล');
 
-  setText('kpi-traffic', compactFormat.format(summary.traffic.vehicles) + ' คัน');
-  setText('kpi-traffic-note', `ปี ${summary.traffic.calendar_year} จาก ${summary.traffic.intersections} แยก`);
+  const traffic = summary.traffic;
+  setText('kpi-traffic', traffic ? `${compactFormat.format(traffic.vehicles)} คัน` : '—');
+  setText('kpi-traffic-note', traffic ? `ปี ${traffic.calendar_year} จาก ${traffic.intersections} แยก` : 'ยังไม่มีข้อมูล');
 
-  setText('kpi-poi', numberFormat.format(summary.poi.total));
-  setText('kpi-poi-note', `${summary.poi.categories} ประเภท จาก OpenStreetMap`);
+  setText('kpi-poi', number(summary.poi.total));
+  setText('kpi-poi-note', summary.poi.total ? `${summary.poi.categories} ประเภท จาก OpenStreetMap` : 'ยังไม่มีข้อมูล');
 
-  setText('kpi-population', numberFormat.format(summary.population.population));
-  setText('kpi-population-note', `ข้อมูลปี ${summary.population.calendar_year}`);
+  const population = summary.population;
+  setText('kpi-population', number(population?.population));
+  setText('kpi-population-note', population ? `ข้อมูลปี ${population.calendar_year}` : 'ยังไม่มีข้อมูล');
 
   const holiday = summary.next_holiday;
-  setText('holiday-pill', holiday ? `วันหยุดถัดไป ${holiday.date} · ${holiday.local_name || holiday.name}` : 'ไม่มีวันหยุดในฐานข้อมูล');
+  setText('holiday-pill', holiday ? `วันหยุดถัดไป ${thaiDate(holiday.date)} · ${holiday.local_name || holiday.name}` : 'ไม่มีวันหยุดในฐานข้อมูล');
   setText('map-zone-count', `${summary.geocode_coverage.geocoded}/${summary.geocode_coverage.total}`);
   setText('map-poi-count', numberFormat.format(summary.poi.total));
   setText('stream-status', `นำเข้าแล้ว ${numberFormat.format(summary.poi.total)} สถานที่ · ${summary.geocode_coverage.total} แยก`);
@@ -267,11 +281,19 @@ function orderedRecommendations(items, ranking = state.aiSummary?.ranking) {
   return [...ranked, ...items.filter((item) => !used.has(item.key))];
 }
 
+const RECOMMENDATIONS_SHOWN = 6;
+
 function renderRecommendations(items) {
   state.recommendations = items;
   const ordered = orderedRecommendations(items);
   setText('recommendation-note', ordered.some((item) => item.aiRank) ? 'AI จัดลำดับความเร่งด่วน' : 'เรียงตามกฎของระบบ');
-  document.querySelector('#recommendation-list').innerHTML = ordered.map((item) => `
+  // แสดงเฉพาะข้อที่ควรทำก่อน ที่เหลือกดดูได้ ไม่งั้นข้อสำคัญจะจมอยู่ในการ์ดสิบกว่าใบ
+  const more = document.querySelector('#recommendation-more');
+  more.hidden = ordered.length <= RECOMMENDATIONS_SHOWN;
+  more.textContent = state.showAllRecommendations
+    ? 'แสดงเฉพาะข้อที่ควรทำก่อน' : `ดูคำแนะนำทั้งหมด (อีก ${ordered.length - RECOMMENDATIONS_SHOWN} ข้อ)`;
+  const shown = state.showAllRecommendations ? ordered : ordered.slice(0, RECOMMENDATIONS_SHOWN);
+  document.querySelector('#recommendation-list').innerHTML = shown.map((item) => `
     <div class="recommendation-item">
       <span class="signal">${item.signal}</span>
       <strong>${item.aiRank ? `<b class="ai-rank">${item.aiRank}</b>` : ''}${item.title}</strong>
@@ -288,6 +310,14 @@ function renderTrendChart(trends, traffic) {
   const trafficByDate = new Map(traffic.map((row) => [row.date, row.vehicle_volume]));
   const labels = trends.map((row) => `${THAI_MONTHS[row.month_id - 1]} ${String(row.calendar_year).slice(2)}`);
   charts.trend?.destroy();
+  const wrap = document.querySelector('#trend-chart').parentElement;
+  if (!trends.length) {
+    // ยังไม่ได้นำเข้าข้อมูลนักท่องเที่ยว บอกตรง ๆ แทนการแสดงกรอบเปล่า
+    wrap.dataset.empty = 'ยังไม่มีข้อมูลนักท่องเที่ยว นำเข้าไฟล์ได้ที่เมนูจัดการข้อมูล';
+    charts.trend = null;
+    return;
+  }
+  delete wrap.dataset.empty;
   charts.trend = new Chart(document.querySelector('#trend-chart'), {
     data: {
       labels,
@@ -326,7 +356,7 @@ function renderPoiChart(categories) {
   charts.poi = new Chart(document.querySelector('#poi-chart'), {
     type: 'bar',
     data: {
-      labels: top.map((row) => row.category),
+      labels: top.map((row) => row.label),
       datasets: [{ data: top.map((row) => row.total), backgroundColor: PALETTE, borderWidth: 0 }],
     },
     options: {
@@ -334,7 +364,7 @@ function renderPoiChart(categories) {
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: (context) => `${numberFormat.format(context.parsed.x)} แห่ง` } } },
       scales: {
         x: { grid: { color: '#edf1ef' }, ticks: { color: '#9aa5a7', font: { family: 'DM Mono', size: 9 } } },
-        y: { grid: { display: false }, ticks: { color: '#617078', font: { family: 'DM Mono', size: 10 } } },
+        y: { grid: { display: false }, ticks: { color: '#617078', font: { family: 'IBM Plex Sans Thai', size: 10 } } },
       },
     },
   });
@@ -397,7 +427,7 @@ function renderForecast(forecast) {
 function renderHolidays(holidays) {
   document.querySelector('#holiday-list').innerHTML = holidays.map((holiday) => `
     <div class="holiday-item">
-      <span class="holiday-date">${holiday.date}</span>
+      <span class="holiday-date">${thaiDate(holiday.date)}</span>
       <span class="holiday-name">${holiday.local_name || holiday.name}${
         // วันสำคัญที่ราชการไม่ได้หยุด ต้องแยกให้เห็น เพราะไม่ถูกนับเป็นวันหยุดในการวิเคราะห์
         holiday.holiday_type === 'observance' ? ' <em class="holiday-tag">วันสำคัญ</em>' : ''
@@ -956,50 +986,48 @@ function renderAirQuality(data) {
 const fetchIf = (permission, path) => (can(permission) ? api(path) : Promise.resolve(null));
 
 async function loadDashboard() {
-  const [summary, zones, micro, trends, traffic, recommendations, points, categories, demographics, upcoming, sources, forecast, impact,
-    boats, islandWaste, airQuality, aiSummary, behavior, revenue, myBusiness] =
-    await Promise.all([
-      fetchIf('view:overview', '/api/summary'),
-      fetchIf('view:spatial', '/api/zones'),
-      fetchIf('view:spatial', '/api/zones/micro'),
-      fetchIf('view:overview', '/api/trends'),
-      fetchIf('view:spatial', '/api/traffic/trends'),
-      fetchIf('view:recommendations', '/api/recommendations'),
-      fetchIf('view:spatial', '/api/poi?limit=3000'),
-      fetchIf('view:spatial', '/api/poi/categories'),
-      fetchIf('view:demographics', '/api/demographics'),
-      fetchIf('view:overview', '/api/holidays/upcoming?limit=4'),
-      fetchIf('view:sources', '/api/sources'),
-      fetchIf('view:forecast', '/api/forecast/tourism?months=6'),
-      fetchIf('view:forecast', '/api/impact'),
-      fetchIf('view:overview', '/api/island/boats'),
-      fetchIf('view:overview', '/api/island/waste'),
-      fetchIf('view:overview', '/api/air-quality'),
-      fetchIf('view:overview', '/api/ai/summary'),
-      fetchIf('view:overview', '/api/behavior'),
-      fetchIf('view:overview', '/api/economy/revenue'),
-      fetchIf('manage:business', '/api/business'),
-    ]);
+  const banner = document.querySelector('#loading-banner');
+  banner.hidden = false;
+  let failed = 0;
+  // แต่ละส่วนขอข้อมูลและวาดแยกกัน ส่วนที่เร็ววาดก่อนโดยไม่ต้องรอส่วนที่ช้า (การเทียบวิธีพยากรณ์ใช้หลายวินาที)
+  // และส่วนหนึ่งพังหรือยังไม่มีข้อมูล จะไม่ทำให้ส่วนอื่นของหน้าว่างไปด้วย
+  const load = (requests, render) => Promise.all(requests)
+    .then((results) => { if (results[0] !== null) render(...results); })
+    .catch((error) => {
+      if (error.status === 401) return;
+      failed += 1;
+      console.error('โหลดข้อมูลบางส่วนไม่สำเร็จ:', error);
+    });
 
-  if (summary) renderSummary(summary);
-  if (trends) renderRanges(trends, traffic || []);
-  if (zones && points) { state.mapData = [zones, points]; drawMap(); renderRanking(zones); }
-  if (micro) renderMicroZones(micro);
-  if (trends) renderTrendChart(trends, traffic || []);
-  if (recommendations) renderRecommendations(recommendations);
-  if (categories) renderPoiChart(categories);
-  if (demographics) renderDemographics(demographics);
-  if (upcoming) renderHolidays(upcoming);
-  if (sources) renderSources(sources);
-  if (forecast) renderTourismForecast(forecast);
-  if (impact) renderImpact(impact);
-  if (boats) renderBoats(boats);
-  if (islandWaste) renderIslandWaste(islandWaste);
-  if (airQuality) renderAirQuality(airQuality);
-  if (aiSummary) renderAiSummary(aiSummary);
-  if (behavior) renderBehavior(behavior);
-  if (revenue) renderRevenue(revenue);
-  if (myBusiness) renderBusiness(myBusiness);
+  await Promise.all([
+    load([fetchIf('view:overview', '/api/summary')], renderSummary),
+    load([fetchIf('view:overview', '/api/trends'), fetchIf('view:spatial', '/api/traffic/trends')], (trends, traffic) => {
+      renderRanges(trends, traffic || []);
+      renderTrendChart(trends, traffic || []);
+    }),
+    load([fetchIf('view:spatial', '/api/zones'), fetchIf('view:spatial', '/api/poi?limit=3000')], (zones, points) => {
+      state.mapData = [zones, points];
+      drawMap();
+      renderRanking(zones);
+    }),
+    load([fetchIf('view:spatial', '/api/zones/micro')], renderMicroZones),
+    load([fetchIf('view:recommendations', '/api/recommendations')], renderRecommendations),
+    load([fetchIf('view:spatial', '/api/poi/categories')], renderPoiChart),
+    load([fetchIf('view:demographics', '/api/demographics')], renderDemographics),
+    load([fetchIf('view:overview', '/api/holidays/upcoming?limit=4')], renderHolidays),
+    load([fetchIf('view:sources', '/api/sources')], renderSources),
+    load([fetchIf('view:forecast', '/api/forecast/tourism?months=6')], renderTourismForecast),
+    load([fetchIf('view:forecast', '/api/impact')], renderImpact),
+    load([fetchIf('view:overview', '/api/island/boats')], renderBoats),
+    load([fetchIf('view:overview', '/api/island/waste')], renderIslandWaste),
+    load([fetchIf('view:overview', '/api/air-quality')], renderAirQuality),
+    load([fetchIf('view:overview', '/api/ai/summary')], renderAiSummary),
+    load([fetchIf('view:overview', '/api/behavior')], renderBehavior),
+    load([fetchIf('view:overview', '/api/economy/revenue')], renderRevenue),
+    load([fetchIf('manage:business', '/api/business')], renderBusiness),
+  ]);
+  banner.hidden = true;
+  if (failed) setText('stream-status', `โหลดข้อมูลไม่สำเร็จ ${failed} ส่วน ลองรีเฟรชหน้า`);
 
   // สภาพอากาศเรียก API ภายนอก แยกออกมาเพื่อไม่ให้ทั้งแดชบอร์ดพังถ้าเน็ตมีปัญหา
   if (can('view:overview')) {
@@ -1186,6 +1214,11 @@ document.querySelector('#register-form').addEventListener('submit', async (event
 document.querySelector('#logout-btn').addEventListener('click', async () => {
   await postJson('/api/auth/logout', {}).catch(() => {});
   showLogin();
+});
+
+document.querySelector('#recommendation-more').addEventListener('click', () => {
+  state.showAllRecommendations = !state.showAllRecommendations;
+  renderRecommendations(state.recommendations);
 });
 
 // ---------------------------------------------------------------- จัดการข้อมูล
@@ -1463,17 +1496,27 @@ function buildReport({ summary, sources, forecast, impact, micro, recommendation
       </div>`);
   }
 
+  // ชุดข้อมูลที่ยังไม่ได้นำเข้าจะเป็น null ข้ามช่องนั้นไป รายงานยังออกได้จากส่วนที่มี
+  const kpis = [];
+  if (summary?.tourism.tourists_year_total) {
+    kpis.push([numberFormat.format(summary.tourism.tourists_year_total), `นักท่องเที่ยวลงเกาะล้าน ปี ${summary.tourism.year}${
+      summary.tourism.year_over_year_percent === null ? '' : ` (${summary.tourism.year_over_year_percent}% เทียบปีก่อน)`}`]);
+  }
+  if (summary?.traffic) {
+    kpis.push([compactFormat.format(summary.traffic.vehicles), `ปริมาณรถ ปี ${summary.traffic.calendar_year} จาก ${summary.traffic.intersections} แยก`]);
+  }
+  if (summary?.poi.total) {
+    kpis.push([numberFormat.format(summary.poi.total), `ธุรกิจท่องเที่ยว ${summary.poi.categories} ประเภท (OpenStreetMap)`]);
+  }
+  if (summary?.population) {
+    kpis.push([numberFormat.format(summary.population.population), `ประชากรแฝง ปี ${summary.population.calendar_year}`]);
+  }
   sections.push(`
     <div class="pr-section">
       <h2>ตัวชี้วัดภาพรวม</h2>
-      <div class="pr-kpi">
-        <div><b>${numberFormat.format(summary.tourism.tourists_year_total)}</b><span>นักท่องเที่ยวลงเกาะล้าน ปี ${summary.tourism.year}${
-          summary.tourism.year_over_year_percent === null ? '' : ` (${summary.tourism.year_over_year_percent}% เทียบปีก่อน)`
-        }</span></div>
-        <div><b>${compactFormat.format(summary.traffic.vehicles)}</b><span>ปริมาณรถ ปี ${summary.traffic.calendar_year} จาก ${summary.traffic.intersections} แยก</span></div>
-        <div><b>${numberFormat.format(summary.poi.total)}</b><span>ธุรกิจท่องเที่ยว ${summary.poi.categories} ประเภท (OpenStreetMap)</span></div>
-        <div><b>${numberFormat.format(summary.population.population)}</b><span>ประชากรแฝง ปี ${summary.population.calendar_year}</span></div>
-      </div>
+      ${kpis.length
+        ? `<div class="pr-kpi">${kpis.map(([value, label]) => `<div><b>${value}</b><span>${label}</span></div>`).join('')}</div>`
+        : '<p style="margin:0">ยังไม่มีข้อมูลในระบบ นำเข้าข้อมูลได้ที่เมนูจัดการข้อมูล</p>'}
     </div>`);
 
   if (micro?.zones?.length) {

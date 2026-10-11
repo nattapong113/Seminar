@@ -28,6 +28,11 @@ THAI_MONTHS = (
 )
 
 
+def month_name(label: str) -> str:
+    """ป้ายเดือน YYYY-MM เป็นชื่อเดือนไทย เช่น มกราคม 2026"""
+    return f"{THAI_MONTHS[int(label[5:7]) - 1]} {label[:4]}"
+
+
 def _pick(row: dict[str, str], columns: tuple[str, ...]) -> Optional[str]:
     return next((row[column] for column in columns if import_csv.clean(row.get(column))), None)
 
@@ -115,7 +120,7 @@ def analyze(rows: list[dict], tourists: dict[str, float], visitor_index: dict[st
     if lag >= 2:
         recommendations.append({
             "key": "stale_data", "signal": "คุณภาพข้อมูล",
-            "title": f"ข้อมูลล่าสุดคือเดือน {labels[-1]}",
+            "title": f"ข้อมูลล่าสุดคือเดือน{month_name(labels[-1])}",
             "detail": f"ช้ากว่าปัจจุบัน {lag} เดือน ควรอัปโหลดเดือนล่าสุดก่อนใช้คำแนะนำด้านล่างตัดสินใจ",
         })
 
@@ -204,7 +209,7 @@ def analyze(rows: list[dict], tourists: dict[str, float], visitor_index: dict[st
         change = (nearest["revenue"] / same_month_last_year - 1) * 100 if same_month_last_year else 0
         recommendations.insert(1 if lag >= 2 else 0, {
             "key": "forecast", "signal": "พยากรณ์รายได้",
-            "title": f"เดือน {nearest['month']} คาดรายได้ {nearest['revenue']:,} บาท",
+            "title": f"เดือน{month_name(nearest['month'])} คาดรายได้ {nearest['revenue']:,} บาท",
             "detail": (
                 f"เทียบเดือนเดียวกันปีก่อนที่ {round(same_month_last_year):,} บาท ({change:+.1f}%) "
                 + (f"ควร{'เพิ่ม' if change > 0 else 'ลด'}กำลังคนและสต็อกราว {abs(change):.0f}%"
@@ -221,7 +226,7 @@ def facts_for_ai(name: str, analysis: dict) -> str:
     """ข้อเท็จจริงของธุรกิจที่ส่งให้ AI เรียบเรียง ตัวเลขจัดรูปแบบไว้แล้ว AI ต้องคัดลอกไปตรง ๆ"""
     summary = analysis["summary"]
     facts = [
-        f"ธุรกิจชื่อ {name} มีข้อมูลรายได้ {summary['months']} เดือน ตั้งแต่ {summary['first_month']} ถึง {summary['last_month']}",
+        f"ธุรกิจชื่อ {name} มีข้อมูลรายได้ {summary['months']} เดือน ตั้งแต่{month_name(summary['first_month'])} ถึง{month_name(summary['last_month'])}",
         f"รายได้ 12 เดือนล่าสุดรวม {summary['revenue_last_12']:,} บาท"
         + (f" เปลี่ยนแปลง {summary['revenue_change_percent']:+}% เทียบ 12 เดือนก่อนหน้า" if summary["revenue_change_percent"] is not None else ""),
     ]
@@ -236,7 +241,7 @@ def facts_for_ai(name: str, analysis: dict) -> str:
         )
     for point in (analysis["forecast"] or {}).get("points", []):
         facts.append(
-            f"พยากรณ์รายได้เดือน {point['month']}: {point['revenue']:,} บาท"
+            f"พยากรณ์รายได้เดือน{month_name(point['month'])}: {point['revenue']:,} บาท"
             + (f" (ช่วงประมาณ 95% คือ {point['lower']:,} ถึง {point['upper']:,} บาท)" if point["lower"] is not None else "")
         )
     if analysis["forecast"]:
