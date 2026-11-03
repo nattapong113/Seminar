@@ -1,58 +1,58 @@
-:root{--ink:#182b32;--muted:#718087;--paper:#f6f8f6;--line:#e1e8e5;--coral:#ee745b;--blue:#4b90a9;--yellow:#e5b84d;--green:#5da17d;--navy:#18343b}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans Thai',sans-serif}.app-shell{display:flex;min-height:100vh}.sidebar{width:248px;background:var(--navy);color:#dce9e5;padding:30px 20px 24px;display:flex;flex-direction:column;flex-shrink:0}.brand{display:flex;gap:11px;align-items:center;margin:2px 8px 55px}.brand-mark{height:37px;width:37px;background:var(--coral);color:white;display:grid;place-items:center;font-family:'DM Mono';font-weight:500;font-size:22px}.brand strong{font-size:14px;letter-spacing:1.8px;display:block;color:white}.brand span{display:block;color:#85a4a6;font-size:9px;letter-spacing:1px;margin-top:1px}.side-label,.eyebrow{font-family:'DM Mono';font-size:10px;letter-spacing:1.5px;color:#88a0a0;margin:0}.side-label{padding:0 12px 13px;color:#6e8d8f}nav{display:grid;gap:4px}.nav-item{border:0;background:transparent;color:#91abad;text-align:left;padding:13px 12px;font:500 14px 'IBM Plex Sans Thai';display:flex;gap:12px;align-items:center;cursor:pointer}.nav-item:hover,.nav-item.active{background:#274850;color:#fff}.nav-item.active{border-left:3px solid var(--coral);padding-left:9px}.nav-icon{font-family:'DM Mono';font-size:17px;color:var(--coral);width:17px;text-align:center}.sidebar-bottom{margin-top:auto;border-top:1px solid #31525a;padding:19px 7px 0;display:flex;align-items:flex-start;gap:9px;font-size:11px}.sidebar-bottom strong{font-family:'DM Mono';font-size:10px;letter-spacing:1px;display:block;color:#b7ccca}.sidebar-bottom span{color:#718e91;display:block;margin-top:4px}.live-dot,.status-pill i{display:inline-block;border-radius:50%;width:7px;height:7px;background:#7acb8e;margin-top:5px;box-shadow:0 0 0 4px #31525a}.main-content{max-width:1500px;flex:1;min-width:0;padding:38px 48px 25px}.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:30px}.topbar h1{font-size:27px;line-height:1.25;margin:6px 0 0;font-weight:700;letter-spacing:-.3px}.report-btn{background:var(--coral);border:0;color:white;padding:11px 16px;font:600 13px 'IBM Plex Sans Thai';cursor:pointer;display:flex;gap:9px;align-items:center;box-shadow:0 5px 12px #ee745b26}.report-btn span{font-size:20px;line-height:12px}.toolbar{display:flex;align-items:center;gap:12px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:12px 0;margin-bottom:21px}.date-chip,.select-wrap{display:flex;gap:11px;align-items:center;font-size:12px}.date-chip span,.select-wrap span{color:var(--muted)}.date-chip strong{font-family:'DM Mono';font-size:11px;font-weight:500}.select-wrap{border-left:1px solid var(--line);padding-left:16px}.select-wrap select{border:0;background:transparent;color:var(--ink);font:500 12px 'IBM Plex Sans Thai';outline:0}.status-pill{margin-left:auto;font-family:'DM Mono';font-size:10px;color:#63816f;display:flex;gap:8px;align-items:center}.status-pill i{box-shadow:0 0 0 4px #dceddf;margin:0}.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}.kpi-card{background:white;border-top:3px solid var(--coral);padding:17px 19px 15px;box-shadow:0 2px 0 #e5ece8}.kpi-card.accent-blue{border-color:var(--blue)}.kpi-card.accent-yellow{border-color:var(--yellow)}.kpi-card.accent-green{border-color:var(--green)}.kpi-head{display:flex;justify-content:space-between;color:#617078;font-size:12px}.kpi-symbol{font-family:'DM Mono';font-size:18px;color:#a4b4b3}.kpi-card>strong{display:block;font:500 27px 'DM Mono';margin:11px 0 10px;letter-spacing:-1.5px}.kpi-foot{font-size:10px;color:#95a0a3;display:flex;gap:8px}.positive{color:#5a9c74}.neutral{color:#bb8c31}.content-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,.8fr);gap:18px;margin-bottom:18px}.panel{background:white;padding:21px 22px;border:1px solid #e6ece9;box-shadow:0 2px 0 #e5ece8}.panel-heading{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:15px}.panel h2{font-size:17px;margin:5px 0 0}.legend{display:flex;gap:10px;font-size:10px;color:#7d8a8e}.legend span{display:flex;align-items:center;gap:4px}.legend-dot{height:8px;width:8px;border-radius:50%;display:inline-block}.legend-dot.high{background:#e66e5d}.legend-dot.mid{background:#e6b24f}.legend-dot.low{background:#63a9a7}#map{height:437px;background:#dbe7e4;z-index:1}.leaflet-container{font-family:'IBM Plex Sans Thai',sans-serif}.map-caption{display:flex;justify-content:space-between;color:#849096;font-size:10px;margin-top:10px}.map-caption b{color:var(--ink);font-family:'DM Mono';font-size:12px}.icon-btn{border:1px solid var(--line);background:white;color:var(--coral);width:29px;height:29px;cursor:pointer}.ranking-list{display:grid;gap:5px}.ranking-item{display:grid;grid-template-columns:25px 1fr auto;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #edf1ef}.ranking-item:last-child{border-bottom:0}.rank{font:500 12px 'DM Mono';color:#b4c0bd}.rank-name{font-size:12px;font-weight:600}.rank-bar{height:4px;background:#eef2f0;margin-top:7px}.rank-bar i{display:block;height:100%;background:var(--coral)}.rank-value{text-align:right;font:500 12px 'DM Mono'}.rank-unit{display:block;color:#9ba7a9;font:9px 'IBM Plex Sans Thai';margin-top:2px}.lower-grid{grid-template-columns:1.55fr .8fr}.chart-note{color:#94a0a2;font-size:10px;padding-top:6px}.chart-wrap{height:220px}.recommendation-list{display:grid;gap:12px}.recommendation-item{border-left:3px solid var(--coral);padding:8px 0 8px 12px;background:#fffaf8}.recommendation-item:nth-child(2){border-color:var(--yellow);background:#fffdf7}.recommendation-item:nth-child(3){border-color:var(--blue);background:#f7fbfc}.recommendation-item strong{display:block;font-size:12px}.recommendation-item p{font-size:11px;color:#718087;margin:5px 0 0;line-height:1.5}.signal{font:9px 'DM Mono';color:var(--coral);float:right}.ai-badge{font:9px 'DM Mono';color:#619070;background:#edf7ee;padding:5px 7px}.loading{color:#9ba7a9;font-size:12px;padding:22px 0}footer{padding:17px 0 0;color:#9ba7a9;font-size:10px}footer span{margin:0 5px;color:var(--coral)}@media(max-width:1000px){.sidebar{width:205px}.main-content{padding:28px 25px}.kpi-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:700px){.sidebar{display:none}.main-content{padding:25px 16px}.topbar{align-items:flex-start;gap:15px}.topbar h1{font-size:22px}.report-btn{font-size:0;padding:10px 12px}.report-btn span{font-size:20px}.toolbar{flex-wrap:wrap}.status-pill{margin-left:0;width:100%}.content-grid,.lower-grid{grid-template-columns:1fr}.kpi-grid{gap:9px}.kpi-card{padding:13px}.kpi-card>strong{font-size:19px}.kpi-foot{display:block}.kpi-foot span{display:block}.kpi-foot span+span{margin-top:3px}.panel{padding:16px}.map-panel #map{height:280px}}
-.weather-live{font-family:'DM Mono';font-size:10px;color:#63816f;white-space:nowrap;border-left:1px solid var(--line);padding-left:16px}
+:root{--ink:#182b32;--muted:#718087;--paper:#f6f8f6;--line:#e1e8e5;--coral:#ee745b;--blue:#4b90a9;--yellow:#e5b84d;--green:#5da17d;--navy:#18343b}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:'IBM Plex Sans Thai',sans-serif}.app-shell{display:flex;min-height:100vh}.sidebar{width:248px;background:var(--navy);color:#dce9e5;padding:30px 20px 24px;display:flex;flex-direction:column;flex-shrink:0}.brand{display:flex;gap:11px;align-items:center;margin:2px 8px 55px}.brand-mark{height:37px;width:37px;background:var(--coral);color:white;display:grid;place-items:center;font-family:'DM Mono';font-weight:500;font-size:22px}.brand strong{font-size:14px;letter-spacing:1.8px;display:block;color:white}.brand span{display:block;color:#85a4a6;font-size:9px;letter-spacing:1px;margin-top:1px}.side-label,.eyebrow{font-family:'DM Mono';font-size:14px;letter-spacing:1.5px;color:#88a0a0;margin:0}.side-label{padding:0 12px 13px;color:#6e8d8f}nav{display:grid;gap:4px}.nav-item{border:0;background:transparent;color:#91abad;text-align:left;padding:13px 12px;font:500 14px 'IBM Plex Sans Thai';display:flex;gap:12px;align-items:center;cursor:pointer}.nav-item:hover,.nav-item.active{background:#274850;color:#fff}.nav-item.active{border-left:3px solid var(--coral);padding-left:9px}.nav-icon{font-family:'DM Mono';font-size:17px;color:var(--coral);width:17px;text-align:center}.sidebar-bottom{margin-top:auto;border-top:1px solid #31525a;padding:19px 7px 0;display:flex;align-items:flex-start;gap:9px;font-size:11px}.sidebar-bottom strong{font-family:'DM Mono';font-size:10px;letter-spacing:1px;display:block;color:#b7ccca}.sidebar-bottom span{color:#718e91;display:block;margin-top:4px}.live-dot,.status-pill i{display:inline-block;border-radius:50%;width:7px;height:7px;background:#7acb8e;margin-top:5px;box-shadow:0 0 0 4px #31525a}.main-content{max-width:1500px;flex:1;min-width:0;padding:38px 48px 25px}.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:30px}.topbar h1{font-size:30px;line-height:1.25;margin:6px 0 0;font-weight:700;letter-spacing:-.3px}.report-btn{background:var(--coral);border:0;color:white;padding:11px 16px;font:600 15px 'IBM Plex Sans Thai';cursor:pointer;display:flex;gap:9px;align-items:center;box-shadow:0 5px 12px #ee745b26}.report-btn span{font-size:22px;line-height:12px}.toolbar{display:flex;align-items:center;gap:12px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:12px 0;margin-bottom:21px}.date-chip,.select-wrap{display:flex;gap:11px;align-items:center;font-size:14px}.date-chip span,.select-wrap span{color:var(--muted)}.date-chip strong{font-family:'DM Mono';font-size:14px;font-weight:500}.select-wrap{border-left:1px solid var(--line);padding-left:16px}.select-wrap select{border:0;background:transparent;color:var(--ink);font:500 14px 'IBM Plex Sans Thai';outline:0}.status-pill{margin-left:auto;font-family:'DM Mono';font-size:14px;color:#63816f;display:flex;gap:8px;align-items:center}.status-pill i{box-shadow:0 0 0 4px #dceddf;margin:0}.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}.kpi-card{background:white;border-top:3px solid var(--coral);padding:17px 19px 15px;box-shadow:0 2px 0 #e5ece8}.kpi-card.accent-blue{border-color:var(--blue)}.kpi-card.accent-yellow{border-color:var(--yellow)}.kpi-card.accent-green{border-color:var(--green)}.kpi-head{display:flex;justify-content:space-between;color:#617078;font-size:14px}.kpi-symbol{font-family:'DM Mono';font-size:20px;color:#a4b4b3}.kpi-card>strong{display:block;font:500 30px 'DM Mono';margin:11px 0 10px;letter-spacing:-1.5px}.kpi-foot{font-size:14px;color:#95a0a3;display:flex;gap:8px}.positive{color:#5a9c74}.neutral{color:#bb8c31}.content-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,.8fr);gap:18px;margin-bottom:18px}.panel{background:white;padding:21px 22px;border:1px solid #e6ece9;box-shadow:0 2px 0 #e5ece8}.panel-heading{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:15px}.panel h2{font-size:19px;margin:5px 0 0}.legend{display:flex;gap:10px;font-size:14px;color:#7d8a8e}.legend span{display:flex;align-items:center;gap:4px}.legend-dot{height:8px;width:8px;border-radius:50%;display:inline-block}.legend-dot.high{background:#e66e5d}.legend-dot.mid{background:#e6b24f}.legend-dot.low{background:#63a9a7}#map{height:437px;background:#dbe7e4;z-index:1}.leaflet-container{font-family:'IBM Plex Sans Thai',sans-serif}.map-caption{display:flex;justify-content:space-between;color:#849096;font-size:14px;margin-top:10px}.map-caption b{color:var(--ink);font-family:'DM Mono';font-size:14px}.icon-btn{border:1px solid var(--line);background:white;color:var(--coral);width:29px;height:29px;cursor:pointer}.ranking-list{display:grid;gap:5px}.ranking-item{display:grid;grid-template-columns:25px 1fr auto;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #edf1ef}.ranking-item:last-child{border-bottom:0}.rank{font:500 14px 'DM Mono';color:#b4c0bd}.rank-name{font-size:14px;font-weight:600}.rank-bar{height:4px;background:#eef2f0;margin-top:7px}.rank-bar i{display:block;height:100%;background:var(--coral)}.rank-value{text-align:right;font:500 14px 'DM Mono'}.rank-unit{display:block;color:#9ba7a9;font:14px 'IBM Plex Sans Thai';margin-top:2px}.lower-grid{grid-template-columns:1.55fr .8fr}.chart-note{color:#94a0a2;font-size:14px;padding-top:6px}.chart-wrap{height:220px}.recommendation-list{display:grid;gap:12px}.recommendation-item{border-left:3px solid var(--coral);padding:8px 0 8px 12px;background:#fffaf8}.recommendation-item:nth-child(2){border-color:var(--yellow);background:#fffdf7}.recommendation-item:nth-child(3){border-color:var(--blue);background:#f7fbfc}.recommendation-item strong{display:block;font-size:14px}.recommendation-item p{font-size:14px;color:#718087;margin:5px 0 0;line-height:1.5}.signal{font:14px 'DM Mono';color:var(--coral);float:right}.ai-badge{font:14px 'DM Mono';color:#619070;background:#edf7ee;padding:5px 7px}.loading{color:#9ba7a9;font-size:14px;padding:22px 0}footer{padding:17px 0 0;color:#9ba7a9;font-size:14px}footer span{margin:0 5px;color:var(--coral)}@media(max-width:1000px){.sidebar{width:205px}.main-content{padding:28px 25px}.kpi-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:700px){.sidebar{display:none}.main-content{padding:25px 16px}.topbar{align-items:flex-start;gap:15px}.topbar h1{font-size:25px}.report-btn{font-size:0;padding:10px 12px}.report-btn span{font-size:22px}.toolbar{flex-wrap:wrap}.status-pill{margin-left:0;width:100%}.content-grid,.lower-grid{grid-template-columns:1fr}.kpi-grid{gap:9px}.kpi-card{padding:13px}.kpi-card>strong{font-size:21px}.kpi-foot{display:block}.kpi-foot span{display:block}.kpi-foot span+span{margin-top:3px}.panel{padding:16px}.map-panel #map{height:280px}}
+.weather-live{font-family:'DM Mono';font-size:14px;color:#63816f;white-space:nowrap;border-left:1px solid var(--line);padding-left:16px}
 .negative{color:#c4564a}
 a.nav-item{text-decoration:none}
-.layer-toggle{display:grid;gap:4px;font-size:10px;color:#7d8a8e}
+.layer-toggle{display:grid;gap:4px;font-size:14px;color:#7d8a8e}
 .layer-toggle label{display:flex;align-items:center;gap:5px;cursor:pointer}
 .layer-toggle input{accent-color:var(--coral);margin:0}
 .chart-wrap.short{height:190px}
-.recommendation-item cite{display:block;font:9px 'DM Mono';color:#a4b0b2;font-style:normal;margin-top:6px}
+.recommendation-item cite{display:block;font:14px 'DM Mono';color:#a4b0b2;font-style:normal;margin-top:6px}
 .recommendation-item:nth-child(4){border-color:var(--green);background:#f8fcf9}
 .recommendation-item:nth-child(5){border-color:#9b7fb5;background:#faf8fc}
 .recommendation-item:nth-child(n+6){border-color:var(--muted);background:#fafbfa}
 .forecast-strip{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:14px}
 .forecast-day{display:grid;justify-items:center;gap:3px;padding:9px 2px;background:#f7faf8;border-top:2px solid transparent}
 .forecast-day.is-holiday{background:#fff5f2;border-top-color:var(--coral)}
-.forecast-date{font:9px 'DM Mono';color:#8a9699}
-.forecast-icon{font-size:15px;line-height:1}
-.forecast-temp{font:500 12px 'DM Mono'}
-.forecast-rain{font:9px 'DM Mono';color:var(--blue)}
+.forecast-date{font:14px 'DM Mono';color:#8a9699}
+.forecast-icon{font-size:17px;line-height:1}
+.forecast-temp{font:500 14px 'DM Mono'}
+.forecast-rain{font:14px 'DM Mono';color:var(--blue)}
 .holiday-list{display:grid;gap:1px;border-top:1px solid var(--line);padding-top:10px}
-.holiday-item{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:7px 0;font-size:11px;border-bottom:1px solid #f1f4f2}
+.holiday-item{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:7px 0;font-size:14px;border-bottom:1px solid #f1f4f2}
 .holiday-item:last-child{border-bottom:0}
-.holiday-date{font:10px 'DM Mono';color:var(--coral)}
+.holiday-date{font:14px 'DM Mono';color:var(--coral)}
 .holiday-name{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.holiday-away{font:9px 'DM Mono';color:#9ba7a9}
+.holiday-away{font:14px 'DM Mono';color:#9ba7a9}
 .source-list{display:grid;gap:1px}
 .source-item{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #f1f4f2}
 .source-item:last-child{border-bottom:0}
-.source-item strong{display:block;font-size:12px}
-.source-item span{display:block;font:9px 'DM Mono';color:#9ba7a9;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.source-item strong{display:block;font-size:14px}
+.source-item span{display:block;font:14px 'DM Mono';color:#9ba7a9;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
 .source-meta{text-align:right;flex-shrink:0}
-.source-meta b{font:500 12px 'DM Mono'}
+.source-meta b{font:500 14px 'DM Mono'}
 @media(max-width:700px){.forecast-strip{grid-template-columns:repeat(4,1fr)}.weather-live{border-left:0;padding-left:0;white-space:normal}}
 .chart-panel{display:flex;flex-direction:column}.chart-panel .panel-heading{flex-shrink:0}.chart-panel .chart-wrap{flex:1;min-height:220px;position:relative}
 .content-grid>*,.source-list>*,.holiday-list>*,.ranking-list>*{min-width:0}.source-item>div{min-width:0}.holiday-name{min-width:0}
 .accuracy-strip{display:flex;flex-wrap:wrap;gap:14px;border-top:1px solid var(--line);margin-top:12px;padding-top:10px}
 .accuracy-item{display:grid;gap:2px}
-.accuracy-item span{font:9px 'DM Mono';color:#9ba7a9;letter-spacing:.5px}
-.accuracy-item b{font:500 13px 'DM Mono'}
+.accuracy-item span{font:14px 'DM Mono';color:#9ba7a9;letter-spacing:.5px}
+.accuracy-item b{font:500 15px 'DM Mono'}
 .accuracy-item.win b{color:var(--green)}
 .accuracy-item.lose b{color:var(--coral)}
 .forecast-table{display:grid;gap:1px;margin-top:10px}
-.forecast-row{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:baseline;padding:5px 0;border-bottom:1px solid #f1f4f2;font-size:11px}
+.forecast-row{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:baseline;padding:5px 0;border-bottom:1px solid #f1f4f2;font-size:14px}
 .forecast-row:last-child{border-bottom:0}
-.forecast-row b{font:500 12px 'DM Mono'}
-.forecast-row .range{font:9px 'DM Mono';color:#9ba7a9;text-align:right}
-.forecast-row .month{font:10px 'DM Mono';color:var(--blue)}
-.caveat{font-size:10px;color:#9ba7a9;line-height:1.6;margin:10px 0 0;border-top:1px dashed var(--line);padding-top:9px}
+.forecast-row b{font:500 14px 'DM Mono'}
+.forecast-row .range{font:14px 'DM Mono';color:#9ba7a9;text-align:right}
+.forecast-row .month{font:14px 'DM Mono';color:var(--blue)}
+.caveat{font-size:14px;color:#9ba7a9;line-height:1.6;margin:10px 0 0;border-top:1px dashed var(--line);padding-top:9px}
 .impact-tiles{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px}
 .impact-tile{background:#f7faf8;padding:10px 12px;border-left:3px solid var(--blue)}
 .impact-tile.is-weak{border-color:#c3cdc9}
-.impact-tile span{display:block;font:9px 'DM Mono';color:#8a9699}
-.impact-tile b{display:block;font:500 17px 'DM Mono';margin:4px 0 3px;letter-spacing:-.5px}
-.impact-tile em{display:block;font-style:normal;font-size:10px;color:#718087;line-height:1.5}
-.recommendation-item .assumption{display:block;font-size:10px;color:#8a9699;margin-top:5px;padding-left:9px;border-left:2px solid #e4eae7}
+.impact-tile span{display:block;font:14px 'DM Mono';color:#8a9699}
+.impact-tile b{display:block;font:500 19px 'DM Mono';margin:4px 0 3px;letter-spacing:-.5px}
+.impact-tile em{display:block;font-style:normal;font-size:14px;color:#718087;line-height:1.5}
+.recommendation-item .assumption{display:block;font-size:14px;color:#8a9699;margin-top:5px;padding-left:9px;border-left:2px solid #e4eae7}
 @media(max-width:700px){.impact-tiles{grid-template-columns:1fr}}
 
 /* ---------------------------------------------------------------- โซนย่อย (Micro-Zoning) */
@@ -60,12 +60,12 @@ a.nav-item{text-decoration:none}
 .zone-row{display:grid;grid-template-columns:18px 1fr 74px 62px;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid #f1f4f2}
 .zone-row:last-child{border-bottom:0}
 .zone-swatch{width:10px;height:10px;border-radius:2px}
-.zone-name{font-size:12px;font-weight:600;line-height:1.3}
-.zone-sub{font:9px 'DM Mono';color:#9ba7a9;margin-top:3px;display:block}
+.zone-name{font-size:14px;font-weight:600;line-height:1.3}
+.zone-sub{font:14px 'DM Mono';color:#9ba7a9;margin-top:3px;display:block}
 .zone-bar{height:4px;background:#eef2f0;margin-top:6px}
 .zone-bar i{display:block;height:100%}
-.zone-metric{text-align:right;font:500 12px 'DM Mono'}
-.zone-metric span{display:block;color:#9ba7a9;font:9px 'IBM Plex Sans Thai';margin-top:2px}
+.zone-metric{text-align:right;font:500 14px 'DM Mono'}
+.zone-metric span{display:block;color:#9ba7a9;font:14px 'IBM Plex Sans Thai';margin-top:2px}
 @media(max-width:700px){.zone-row{grid-template-columns:14px 1fr 60px}.zone-row>.zone-metric:last-child{display:none}}
 
 /* ---------------------------------------------------------------- รายงานผู้บริหารสำหรับพิมพ์ */
@@ -108,47 +108,47 @@ a.nav-item{text-decoration:none}
 .login-card label{min-width:0;grid-template-columns:minmax(0,1fr)}
 .login-card input,.login-card select,.login-card button{max-width:100%;min-width:0}
 .login-card .brand-mark{margin-bottom:6px}
-.login-card h1{font-size:18px;margin:0;line-height:1.35}
-.login-sub{margin:0 0 6px;font-size:12px;color:var(--muted)}
-.login-card label{display:grid;gap:5px;font-size:11px;color:var(--muted)}
-.login-card input{border:1px solid var(--line);padding:10px 11px;font:400 13px 'IBM Plex Sans Thai';outline:0}
+.login-card h1{font-size:20px;margin:0;line-height:1.35}
+.login-sub{margin:0 0 6px;font-size:14px;color:var(--muted)}
+.login-card label{display:grid;gap:5px;font-size:14px;color:var(--muted)}
+.login-card input{border:1px solid var(--line);padding:10px 11px;font:400 15px 'IBM Plex Sans Thai';outline:0}
 .login-card input:focus{border-color:var(--coral)}
-.login-card button{background:var(--coral);border:0;color:white;padding:12px;font:600 13px 'IBM Plex Sans Thai';cursor:pointer;margin-top:6px}
+.login-card button{background:var(--coral);border:0;color:white;padding:12px;font:600 15px 'IBM Plex Sans Thai';cursor:pointer;margin-top:6px}
 .login-card button:disabled{opacity:.6;cursor:default}
-.login-error{background:#fdf0ee;color:#b4402f;font-size:11px;padding:9px 11px;margin:0;line-height:1.5}
+.login-error{background:#fdf0ee;color:#b4402f;font-size:14px;padding:9px 11px;margin:0;line-height:1.5}
 
 /* ---------------------------------------------------------------- ผู้ใช้บนแถบบน */
 .topbar-right{display:flex;align-items:center;gap:12px}
 .user-chip{text-align:right;line-height:1.3}
-.user-chip strong{display:block;font-size:12px}
-.user-chip span{display:block;font:9px 'DM Mono';color:var(--muted)}
-#logout-btn{font-size:14px;line-height:1}
+.user-chip strong{display:block;font-size:14px}
+.user-chip span{display:block;font:14px 'DM Mono';color:var(--muted)}
+#logout-btn{font-size:16px;line-height:1}
 
 /* ---------------------------------------------------------------- จัดการผู้ใช้ */
 .user-form{display:grid;gap:7px;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--line)}
-.user-form input,.user-form select{border:1px solid var(--line);padding:8px 10px;font:400 12px 'IBM Plex Sans Thai';outline:0}
-.user-form button{background:var(--coral);border:0;color:white;padding:9px;font:600 12px 'IBM Plex Sans Thai';cursor:pointer}
+.user-form input,.user-form select{border:1px solid var(--line);padding:8px 10px;font:400 14px 'IBM Plex Sans Thai';outline:0}
+.user-form button{background:var(--coral);border:0;color:white;padding:9px;font:600 14px 'IBM Plex Sans Thai';cursor:pointer}
 .user-list,.role-list,.audit-list{display:grid;gap:1px}
 .user-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #f1f4f2}
 .user-row:last-child{border-bottom:0}
-.user-row strong{display:block;font-size:12px}
-.user-row span{display:block;font:9px 'DM Mono';color:#9ba7a9;margin-top:3px}
+.user-row strong{display:block;font-size:14px}
+.user-row span{display:block;font:14px 'DM Mono';color:#9ba7a9;margin-top:3px}
 .user-row button:disabled{opacity:.3;cursor:default}
 .role-row{padding:9px 0;border-bottom:1px solid #f1f4f2}
 .role-row:last-child{border-bottom:0}
-.role-head{display:flex;justify-content:space-between;font-size:12px}
-.role-head span{font:9px 'DM Mono';color:#9ba7a9}
+.role-head{display:flex;justify-content:space-between;font-size:14px}
+.role-head span{font:14px 'DM Mono';color:#9ba7a9}
 .role-perms{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
-.role-perms code{font:9px 'DM Mono';background:#f2f5f3;color:#5a6b70;padding:3px 5px}
-.audit-row{display:grid;grid-template-columns:auto 1fr;gap:9px;padding:6px 0;border-bottom:1px solid #f4f6f5;font-size:10px}
+.role-perms code{font:14px 'DM Mono';background:#f2f5f3;color:#5a6b70;padding:3px 5px}
+.audit-row{display:grid;grid-template-columns:auto 1fr;gap:9px;padding:6px 0;border-bottom:1px solid #f4f6f5;font-size:14px}
 .audit-row:last-child{border-bottom:0}
-.audit-time{font:9px 'DM Mono';color:#9ba7a9;white-space:nowrap}
+.audit-time{font:14px 'DM Mono';color:#9ba7a9;white-space:nowrap}
 @media print{#login-screen{display:none!important}}
 
 /* ---------------------------------------------------------------- จัดการข้อมูล */
 .upload-form{display:flex;gap:7px;align-items:center}
-.upload-form input{flex:1;min-width:0;border:1px solid var(--line);padding:7px 9px;font:400 11px 'IBM Plex Sans Thai';background:white}
-.upload-form button{background:var(--coral);border:0;color:white;padding:9px 16px;font:600 12px 'IBM Plex Sans Thai';cursor:pointer;white-space:nowrap}
+.upload-form input{flex:1;min-width:0;border:1px solid var(--line);padding:7px 9px;font:400 14px 'IBM Plex Sans Thai';background:white}
+.upload-form button{background:var(--coral);border:0;color:white;padding:9px 16px;font:600 14px 'IBM Plex Sans Thai';cursor:pointer;white-space:nowrap}
 .upload-form button:disabled{opacity:.5;cursor:default}
 .upload-result{margin-top:10px}
 .upload-errors{margin:6px 0 0;padding-left:16px;max-height:150px;overflow-y:auto}
@@ -157,18 +157,18 @@ a.nav-item{text-decoration:none}
 
 /* ---------------------------------------------------------------- สมัครสมาชิก / อนุมัติ */
 .login-card .hint{color:#a4b0b2;font-weight:400}
-.login-card select{border:1px solid var(--line);padding:10px 11px;font:400 12px 'IBM Plex Sans Thai';outline:0;background:white}
-.login-success{background:#eef7f0;color:#3f7a56;font-size:11px;padding:9px 11px;margin:0;line-height:1.5}
-.login-switch{margin:2px 0 0;font-size:11px;color:var(--muted);text-align:center}
-.login-switch button{background:none;border:0;color:var(--coral);font:600 11px 'IBM Plex Sans Thai';cursor:pointer;padding:0;margin:0;width:auto}
+.login-card select{border:1px solid var(--line);padding:10px 11px;font:400 14px 'IBM Plex Sans Thai';outline:0;background:white}
+.login-success{background:#eef7f0;color:#3f7a56;font-size:14px;padding:9px 11px;margin:0;line-height:1.5}
+.login-switch{margin:2px 0 0;font-size:14px;color:var(--muted);text-align:center}
+.login-switch button{background:none;border:0;color:var(--coral);font:600 14px 'IBM Plex Sans Thai';cursor:pointer;padding:0;margin:0;width:auto}
 #login-screen{overflow-y:auto}
 .panel-heading-right{display:flex;align-items:center;gap:10px}
 .user-row.is-pending{background:#fffaf8;border-left:3px solid var(--coral);padding-left:9px;margin-left:-9px}
-.status-tag{font:9px 'DM Mono';color:var(--coral);background:#fdeeea;padding:2px 5px;font-style:normal;margin-left:5px;vertical-align:1px}
+.status-tag{font:14px 'DM Mono';color:var(--coral);background:#fdeeea;padding:2px 5px;font-style:normal;margin-left:5px;vertical-align:1px}
 .status-tag.is-rejected{color:#8a9699;background:#f1f4f2}
 .review-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
-.review-actions select{border:1px solid var(--line);padding:5px 6px;font:400 10px 'IBM Plex Sans Thai';outline:0;background:white}
-.approve-btn{background:var(--green);border:0;color:white;padding:7px 11px;font:600 11px 'IBM Plex Sans Thai';cursor:pointer}
+.review-actions select{border:1px solid var(--line);padding:5px 6px;font:400 14px 'IBM Plex Sans Thai';outline:0;background:white}
+.approve-btn{background:var(--green);border:0;color:white;padding:7px 11px;font:600 14px 'IBM Plex Sans Thai';cursor:pointer}
 .approve-btn:disabled{opacity:.5;cursor:default}
 @media(max-width:700px){.user-row{flex-wrap:wrap}.review-actions{width:100%;justify-content:flex-end}}
 
@@ -178,52 +178,52 @@ a.nav-item{text-decoration:none}
 .content-grid.even-grid{grid-template-columns:1fr 1fr}
 @media(max-width:700px){.content-grid.even-grid{grid-template-columns:1fr}}
 /* กราฟของชุดข้อมูลที่ยังไม่ได้นำเข้า */
-.chart-wrap[data-empty]::before{content:attr(data-empty);position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#9ba7a9}
+.chart-wrap[data-empty]::before{content:attr(data-empty);position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:14px;color:#9ba7a9}
 .chart-wrap[data-empty] canvas{visibility:hidden}
-.rank-name small{display:block;font:9px 'DM Mono';color:#9ba7a9;margin-top:2px}
+.rank-name small{display:block;font:14px 'DM Mono';color:#9ba7a9;margin-top:2px}
 
 /* ---------------------------------------------------------------- พฤติกรรมการเดินทาง */
 .insight-list{display:grid;gap:1px}
 .insight-item{display:grid;grid-template-columns:28px 1fr;gap:10px;align-items:baseline;padding:9px 0;border-bottom:1px solid #f1f4f2}
 .insight-item:last-child{border-bottom:0}
-.insight-item .rank{font:500 10px 'DM Mono';color:#b6c0c2}
-.insight-item p{margin:0;font-size:12px;line-height:1.7}
-.ai-rank{display:inline-block;min-width:16px;text-align:center;background:var(--green);color:white;font:600 10px 'DM Mono';padding:1px 4px;margin-right:6px;vertical-align:1px}
-.ai-reason{display:block;font-size:10px;color:#3f7a56;background:#eef7f0;padding:5px 7px;margin:5px 0 4px;line-height:1.5}
+.insight-item .rank{font:500 14px 'DM Mono';color:#b6c0c2}
+.insight-item p{margin:0;font-size:14px;line-height:1.7}
+.ai-rank{display:inline-block;min-width:16px;text-align:center;background:var(--green);color:white;font:600 14px 'DM Mono';padding:1px 4px;margin-right:6px;vertical-align:1px}
+.ai-reason{display:block;font-size:14px;color:#3f7a56;background:#eef7f0;padding:5px 7px;margin:5px 0 4px;line-height:1.5}
 
 /* ---------------------------------------------------------------- ตารางเทียบวิธีพยากรณ์ */
 .model-table{margin-top:12px;border-top:1px solid var(--line);padding-top:8px}
-.model-row{display:grid;grid-template-columns:1fr 78px 78px 88px;gap:8px;align-items:baseline;padding:5px 0;border-bottom:1px solid #f1f4f2;font-size:11px}
-.model-row span:not(:first-child){text-align:right;font:500 11px 'DM Mono'}
-.model-head span{font:9px 'DM Mono';color:#9ba7a9}
-.model-head span:not(:first-child){font:9px 'DM Mono'}
-.model-head small{display:block;font:8px 'DM Mono';color:#b6c0c2}
+.model-row{display:grid;grid-template-columns:1fr 78px 78px 88px;gap:8px;align-items:baseline;padding:5px 0;border-bottom:1px solid #f1f4f2;font-size:14px}
+.model-row span:not(:first-child){text-align:right;font:500 14px 'DM Mono'}
+.model-head span{font:14px 'DM Mono';color:#9ba7a9}
+.model-head span:not(:first-child){font:14px 'DM Mono'}
+.model-head small{display:block;font:14px 'DM Mono';color:#b6c0c2}
 .model-row.is-chosen{background:#eef6f9;margin:0 -6px;padding:5px 6px}
-.model-row em{font-style:normal;font-size:9px;color:var(--blue);margin-left:4px}
-.ml-tag{font:600 8px 'DM Mono';color:white;background:#9b7fb5;padding:1px 4px;margin-right:5px;vertical-align:1px}
+.model-row em{font-style:normal;font-size:14px;color:var(--blue);margin-left:4px}
+.ml-tag{font:600 14px 'DM Mono';color:white;background:#9b7fb5;padding:1px 4px;margin-right:5px;vertical-align:1px}
 .model-table .caveat{border-top:0;margin-top:6px;padding-top:0}
 
 /* ---------------------------------------------------------------- ธุรกิจของฉัน */
-.sample-tag{font:600 10px 'IBM Plex Sans Thai';color:#8a5a00;background:#fdf1cf;border:1px dashed #d9a520;padding:3px 8px;white-space:nowrap}
+.sample-tag{font:600 14px 'IBM Plex Sans Thai';color:#8a5a00;background:#fdf1cf;border:1px dashed #d9a520;padding:3px 8px;white-space:nowrap}
 .business-kpis{grid-template-columns:repeat(3,1fr)}
 .business-kpis:empty{display:none}
 .business-form{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
-.business-form input[type=text],.business-form input[type=file]{flex:1;min-width:160px;border:1px solid var(--line);padding:7px 9px;font:400 11px 'IBM Plex Sans Thai';background:white}
-.business-form button[type=submit]{background:var(--coral);border:0;color:white;padding:9px 16px;font:600 12px 'IBM Plex Sans Thai';cursor:pointer}
+.business-form input[type=text],.business-form input[type=file]{flex:1;min-width:160px;border:1px solid var(--line);padding:7px 9px;font:400 14px 'IBM Plex Sans Thai';background:white}
+.business-form button[type=submit]{background:var(--coral);border:0;color:white;padding:9px 16px;font:600 14px 'IBM Plex Sans Thai';cursor:pointer}
 .business-form button:disabled{opacity:.5;cursor:default}
-.business-sample{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);white-space:nowrap}
-.caveat code{font:10px 'DM Mono';background:#f2f5f3;padding:1px 4px}
+.business-sample{display:flex;align-items:center;gap:5px;font-size:14px;color:var(--muted);white-space:nowrap}
+.caveat code{font:14px 'DM Mono';background:#f2f5f3;padding:1px 4px}
 .caveat a{color:var(--coral)}
 @media(max-width:700px){.business-kpis{grid-template-columns:1fr}}
 .business-ai{background:#f7faf8;border-left:3px solid var(--green);padding:10px 12px;margin-bottom:12px}
-.business-ai .ai-text{font-size:12px;line-height:1.75}
+.business-ai .ai-text{font-size:14px;line-height:1.75}
 .business-ai-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px}
 .business-ai .approve-btn{white-space:nowrap;flex-shrink:0}
 .business-ai .approve-btn:disabled{opacity:.5;cursor:default}
 
 /* ---------------------------------------------------------------- สรุปโดย AI */
-.ai-text{font-size:13px;line-height:1.85;margin:0;white-space:pre-line}
-.ai-text.is-empty{color:#9ba7a9;font-size:11px}
+.ai-text{font-size:15px;line-height:1.85;margin:0;white-space:pre-line}
+.ai-text.is-empty{color:#9ba7a9;font-size:14px}
 #ai-warning{margin-top:10px}
 #ai-generate:disabled{opacity:.5;cursor:default}
 
@@ -234,11 +234,11 @@ a.nav-item{text-decoration:none}
 
 /* ---------------------------------------------------------------- จัดหน้าใหม่: กลุ่มเมนู หัวหน้า และสัดส่วนแผง */
 /* ข้อความไทยใช้ DM Mono แบบเว้นช่องไฟไม่ได้ สระและวรรณยุกต์จะหลุดจากตัวอักษร */
-.nav-group{font:600 10px 'IBM Plex Sans Thai';color:#6e8d8f;padding:16px 12px 6px}
-#page-group{font-family:'IBM Plex Sans Thai';letter-spacing:0;font-size:11px}
+.nav-group{font:600 14px 'IBM Plex Sans Thai';color:#6e8d8f;padding:16px 12px 6px}
+#page-group{font-family:'IBM Plex Sans Thai';letter-spacing:0;font-size:14px}
 .sidebar .brand{margin-bottom:34px}
 .nav-item{padding:10px 12px;font-size:13px}
-.page-subtitle{margin:6px 0 0;font-size:12px;color:var(--muted)}
+.page-subtitle{margin:6px 0 0;font-size:14px;color:var(--muted)}
 .topbar{align-items:flex-start;margin-bottom:22px;padding-bottom:18px;border-bottom:1px solid var(--line)}
 .toolbar{border-top:0;padding-top:0;margin-top:-6px}
 /* กราฟไม่ยืดตามแผงข้าง ๆ อีกแล้ว เดิมกราฟสูงเป็นพันพิกเซลเมื่อแผงคู่กันเป็นรายการยาว */
@@ -251,36 +251,36 @@ a.nav-item{text-decoration:none}
 
 /* ---------------------------------------------------------------- ภาษาไทยทั้งหน้า สถานะโหลด และปุ่มดูเพิ่ม */
 /* ป้ายเล็กเหนือหัวข้อแผงเป็นภาษาไทยแล้ว จึงเลิกใช้ DM Mono แบบเว้นช่องไฟ ซึ่งทำให้สระและวรรณยุกต์หลุดจากตัวอักษร */
-.eyebrow{font:600 10px 'IBM Plex Sans Thai';letter-spacing:0;color:#88a0a0}
+.eyebrow{font:600 14px 'IBM Plex Sans Thai';letter-spacing:0;color:#88a0a0}
 .sidebar-bottom strong{font-family:'IBM Plex Sans Thai';letter-spacing:0}
 .zone-sub,.rank-name small,.rank-unit{font-family:'IBM Plex Sans Thai'}
-.loading-banner{display:flex;align-items:center;gap:9px;background:#eef6f9;border-left:3px solid var(--blue);color:#3d6f84;font-size:12px;padding:9px 13px;margin-bottom:16px}
+.loading-banner{display:flex;align-items:center;gap:9px;background:#eef6f9;border-left:3px solid var(--blue);color:#3d6f84;font-size:14px;padding:9px 13px;margin-bottom:16px}
 .loading-banner i{width:11px;height:11px;border:2px solid #b9d6e2;border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
 @keyframes spin{to{transform:rotate(360deg)}}
-.more-btn{display:block;margin:14px auto 0;background:none;border:1px solid var(--line);color:var(--muted);font:500 12px 'IBM Plex Sans Thai';padding:8px 18px;cursor:pointer}
+.more-btn{display:block;margin:14px auto 0;background:none;border:1px solid var(--line);color:var(--muted);font:500 14px 'IBM Plex Sans Thai';padding:8px 18px;cursor:pointer}
 .more-btn:hover{border-color:var(--coral);color:var(--coral)}
 @media print{.loading-banner{display:none!important}}
 /* ---------------------------------------------------------------- คำอธิบายสีใต้แผนที่ */
-.map-legend{display:grid;gap:9px;margin-top:12px;padding-top:12px;border-top:1px dashed var(--line);font-size:11px;color:#5a6b70}
+.map-legend{display:grid;gap:9px;margin-top:12px;padding-top:12px;border-top:1px dashed var(--line);font-size:14px;color:#5a6b70}
 .legend-row{display:grid;grid-template-columns:150px 1fr;gap:4px 12px;align-items:center}
-.legend-row strong{font-weight:600;color:var(--ink);font-size:11px}
+.legend-row strong{font-weight:600;color:var(--ink);font-size:14px}
 /* ไล่สีเดียวกับ gradient ของ L.heatLayer ใน renderMap */
 .legend-ramp{height:9px;background:linear-gradient(90deg,#4b90a9 0%,#5da17d 33%,#e5b84d 60%,#ee745b 84%,#a8301c 100%);opacity:.85}
-.legend-ends{grid-column:2;display:flex;justify-content:space-between;font-size:10px;color:#8a9699}
+.legend-ends{grid-column:2;display:flex;justify-content:space-between;font-size:14px;color:#8a9699}
 .legend-ends em{font-style:normal}
 .legend-items{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center}
 .legend-items>span{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
 .legend-items .dot{width:11px;height:11px;border-radius:50%;opacity:.75;flex-shrink:0}
 .legend-items .ring{width:11px;height:11px;border-radius:50%;border:2px dashed;flex-shrink:0}
-.legend-note{color:#9ba7a9;font-size:10px;white-space:normal!important}
+.legend-note{color:#9ba7a9;font-size:14px;white-space:normal!important}
 @media(max-width:700px){.legend-row{grid-template-columns:1fr}.legend-ends{grid-column:1}}
 /* ---------------------------------------------------------------- การ์ดตัวเลขหลักที่กดได้ */
 .kpi-card.is-link{cursor:pointer;transition:transform .12s,box-shadow .12s}
 .kpi-card.is-link:hover,.kpi-card.is-link:focus-visible{transform:translateY(-2px);box-shadow:0 6px 14px #18343b1f;outline:0}
-.kpi-card.is-link .kpi-symbol::after{content:' →';color:var(--coral);font-size:11px}
+.kpi-card.is-link .kpi-symbol::after{content:' →';color:var(--coral);font-size:14px}
 
 /* ---------------------------------------------------------------- วิธีอ่านกราฟ */
-.chart-key{display:flex;flex-wrap:wrap;gap:5px 14px;align-items:center;margin:10px 0 0;font-size:10px;color:#6b7b80;line-height:1.5}
+.chart-key{display:flex;flex-wrap:wrap;gap:5px 14px;align-items:center;margin:10px 0 0;font-size:14px;color:#6b7b80;line-height:1.5}
 .chart-key>span{display:inline-flex;align-items:center;gap:5px}
 .chart-key i{flex-shrink:0;display:inline-block}
 .chart-key .bar{width:10px;height:10px;background:var(--c);opacity:.75}
@@ -289,5 +289,5 @@ a.nav-item{text-decoration:none}
 .chart-key .dot{width:8px;height:8px;border-radius:50%;background:var(--c)}
 .chart-key .band{width:16px;height:10px;background:var(--c);opacity:.18}
 .chart-key .key-note{color:#9ba7a9;flex-basis:100%}
-.audit-row small{display:block;color:#9ba7a9;font-size:9px;margin-top:1px}
+.audit-row small{display:block;color:#9ba7a9;font-size:14px;margin-top:1px}
 .ranking-panel .select-wrap select{max-width:130px}

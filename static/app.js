@@ -239,8 +239,8 @@ function renderZoneChart(zones) {
         tooltip: { callbacks: { label: (item) => `${item.parsed.x} แห่ง/ตร.กม.` } },
       },
       scales: {
-        x: { grid: { color: '#eef2f0' }, ticks: { font: { size: 9 } } },
-        y: { grid: { display: false }, ticks: { font: { size: 9 } } },
+        x: { grid: { color: '#eef2f0' }, ticks: { font: { size: 14 } } },
+        y: { grid: { display: false }, ticks: { font: { size: 14 } } },
       },
     },
   });
@@ -371,13 +371,13 @@ function renderTrendChart(trends, traffic) {
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { labels: { font: { family: 'IBM Plex Sans Thai', size: 10 }, boxWidth: 10 } },
+        legend: { labels: { font: { family: 'IBM Plex Sans Thai', size: 14 }, boxWidth: 10 } },
         tooltip: { callbacks: { label: (context) => `${context.dataset.label}: ${numberFormat.format(context.parsed.y)}` } },
       },
       scales: {
-        x: { grid: { display: false }, ticks: { color: '#9aa5a7', font: { family: 'DM Mono', size: 9 }, maxRotation: 0, autoSkipPadding: 12 } },
-        y: { position: 'left', grid: { color: '#edf1ef' }, ticks: { color: '#ee745b', font: { family: 'DM Mono', size: 9 }, callback: (value) => compactFormat.format(value) } },
-        y1: { position: 'right', grid: { display: false }, ticks: { color: '#4b90a9', font: { family: 'DM Mono', size: 9 }, callback: (value) => compactFormat.format(value) } },
+        x: { grid: { display: false }, ticks: { color: '#9aa5a7', font: { family: 'DM Mono', size: 14 }, maxRotation: 0, autoSkipPadding: 12 } },
+        y: { position: 'left', grid: { color: '#edf1ef' }, ticks: { color: '#ee745b', font: { family: 'DM Mono', size: 14 }, callback: (value) => compactFormat.format(value) } },
+        y1: { position: 'right', grid: { display: false }, ticks: { color: '#4b90a9', font: { family: 'DM Mono', size: 14 }, callback: (value) => compactFormat.format(value) } },
       },
     },
   });
@@ -396,8 +396,8 @@ function renderPoiChart(categories) {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: (context) => `${numberFormat.format(context.parsed.x)} แห่ง` } } },
       scales: {
-        x: { grid: { color: '#edf1ef' }, ticks: { color: '#9aa5a7', font: { family: 'DM Mono', size: 9 } } },
-        y: { grid: { display: false }, ticks: { color: '#617078', font: { family: 'IBM Plex Sans Thai', size: 10 } } },
+        x: { grid: { color: '#edf1ef' }, ticks: { color: '#9aa5a7', font: { family: 'DM Mono', size: 14 } } },
+        y: { grid: { display: false }, ticks: { color: '#617078', font: { family: 'IBM Plex Sans Thai', size: 14 } } },
       },
     },
   });
@@ -417,12 +417,12 @@ function renderDemographicChart(category) {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
-        title: { display: true, text: `ข้อมูลปี ${latestYear}`, color: '#9aa5a7', font: { family: 'DM Mono', size: 10 } },
+        title: { display: true, text: `ข้อมูลปี ${latestYear}`, color: '#9aa5a7', font: { family: 'DM Mono', size: 14 } },
         tooltip: { callbacks: { label: (context) => `${numberFormat.format(context.parsed.x)} คน` } },
       },
       scales: {
-        x: { grid: { color: '#edf1ef' }, ticks: { color: '#9aa5a7', font: { family: 'DM Mono', size: 9 }, callback: (value) => compactFormat.format(value) } },
-        y: { grid: { display: false }, ticks: { color: '#617078', font: { family: 'IBM Plex Sans Thai', size: 10 } } },
+        x: { grid: { color: '#edf1ef' }, ticks: { color: '#9aa5a7', font: { family: 'DM Mono', size: 14 }, callback: (value) => compactFormat.format(value) } },
+        y: { grid: { display: false }, ticks: { color: '#617078', font: { family: 'IBM Plex Sans Thai', size: 14 } } },
       },
     },
   });
@@ -530,7 +530,7 @@ function renderTourismForecast(data) {
       plugins: {
         legend: {
           labels: {
-            font: { family: 'IBM Plex Sans Thai', size: 10 }, boxWidth: 10,
+            font: { family: 'IBM Plex Sans Thai', size: 14 }, boxWidth: 10,
             filter: (item) => item.text !== 'ขอบล่าง',
           },
         },
@@ -542,8 +542,8 @@ function renderTourismForecast(data) {
         },
       },
       scales: {
-        x: { grid: { display: false }, ticks: { color: '#9aa5a7', font: { family: 'DM Mono', size: 9 }, maxRotation: 0, autoSkipPadding: 14 } },
-        y: { grid: { color: '#edf1ef' }, ticks: { color: '#9aa5a7', font: { family: 'DM Mono', size: 9 }, callback: (value) => compactFormat.format(value) } },
+        x: { grid: { display: false }, ticks: { color: '#9aa5a7', font: { family: 'DM Mono', size: 14 }, maxRotation: 0, autoSkipPadding: 14 } },
+        y: { grid: { color: '#edf1ef' }, ticks: { color: '#9aa5a7', font: { family: 'DM Mono', size: 14 }, callback: (value) => compactFormat.format(value) } },
       },
     },
   });
@@ -637,7 +637,7 @@ function renderImpact(data) {
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: {
-        legend: { labels: { font: { family: 'IBM Plex Sans Thai', size: 10 }, boxWidth: 10 } },
+        legend: { labels: { font: { family: 'IBM Plex Sans Thai', size: 14 }, boxWidth: 10 } },
         tooltip: {
           callbacks: {
             label: (context) => {
@@ -650,10 +650,10 @@ function renderImpact(data) {
         },
       },
       scales: {
-        x: { title: { display: true, text: 'ฝนมากกว่า/น้อยกว่าปกติของเดือนนั้น (มม.)', color: '#8a9699', font: { family: 'IBM Plex Sans Thai', size: 9 } },
-             grid: { color: '#edf1ef' }, ticks: { color: '#9aa5a7', font: { family: 'DM Mono', size: 9 } } },
-        y: { title: { display: true, text: 'ดัชนีคน (1.0 = ตามที่คาด)', color: '#8a9699', font: { family: 'IBM Plex Sans Thai', size: 9 } },
-             grid: { color: '#edf1ef' }, ticks: { color: '#9aa5a7', font: { family: 'DM Mono', size: 9 } } },
+        x: { title: { display: true, text: 'ฝนมากกว่า/น้อยกว่าปกติของเดือนนั้น (มม.)', color: '#8a9699', font: { family: 'IBM Plex Sans Thai', size: 14 } },
+             grid: { color: '#edf1ef' }, ticks: { color: '#9aa5a7', font: { family: 'DM Mono', size: 14 } } },
+        y: { title: { display: true, text: 'ดัชนีคน (1.0 = ตามที่คาด)', color: '#8a9699', font: { family: 'IBM Plex Sans Thai', size: 14 } },
+             grid: { color: '#edf1ef' }, ticks: { color: '#9aa5a7', font: { family: 'DM Mono', size: 14 } } },
       },
     },
   });
@@ -673,14 +673,14 @@ function categoryChart(key, canvasId, labels, datasets, { stacked = false, forma
     return;
   }
   delete canvas.parentElement.dataset.empty;
-  const tick = { color: '#9aa5a7', font: { family: 'DM Mono', size: 9 } };
+  const tick = { color: '#9aa5a7', font: { family: 'DM Mono', size: 14 } };
   charts[key] = new Chart(canvas, {
     type: 'bar',
     data: { labels, datasets },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { display: datasets.length > 1, labels: { font: { family: 'IBM Plex Sans Thai', size: 10 }, boxWidth: 10 } },
+        legend: { display: datasets.length > 1, labels: { font: { family: 'IBM Plex Sans Thai', size: 14 }, boxWidth: 10 } },
         tooltip: { callbacks: { label: (context) => `${context.dataset.label}: ${format(context.parsed.y)}` } },
       },
       scales: {
@@ -937,13 +937,13 @@ function monthlyComboChart(key, canvasId, months, datasets, rightAxisFormat) {
     return;
   }
   delete canvas.parentElement.dataset.empty;
-  const tick = (color) => ({ color, font: { family: 'DM Mono', size: 9 } });
+  const tick = (color) => ({ color, font: { family: 'DM Mono', size: 14 } });
   charts[key] = new Chart(canvas, {
     data: { labels: months.map(monthLabel), datasets },
     options: {
       responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { labels: { font: { family: 'IBM Plex Sans Thai', size: 10 }, boxWidth: 10 } },
+        legend: { labels: { font: { family: 'IBM Plex Sans Thai', size: 14 }, boxWidth: 10 } },
         tooltip: { callbacks: { label: (context) => (
           context.parsed.y === null ? null : `${context.dataset.label}: ${numberFormat.format(context.parsed.y)}`
         ) } },

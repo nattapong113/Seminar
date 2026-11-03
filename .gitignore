@@ -4,3 +4,4 @@ __pycache__/
 .env
 pattaya_tourism.db
 .vscode/
+demo_accounts.local.md
