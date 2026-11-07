@@ -140,7 +140,7 @@ CREATE TABLE IF NOT EXISTS zone_traffic_volume (
     unit TEXT,
     imported_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     -- ที่มาของพิกัด: osm_junction_name = โหนดแยกที่มีชื่อตรงใน OSM,
-    -- osm_road_pair = จุดที่ถนนสองสายตัดกันใน OSM, NULL = ยังไม่มีพิกัด
+    -- osm_road_pair = จุดที่ถนนสองสายตัดกันใน OSM, osm_signal_cluster = ค่าเฉลี่ยกลุ่มโหนดไฟจราจร, NULL = ยังไม่มีพิกัด
     geocode_method TEXT,
     geocode_detail TEXT,
     UNIQUE(source_file, intersection_id, calendar_year_be, month_id)

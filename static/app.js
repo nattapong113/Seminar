@@ -116,7 +116,8 @@ function renderRanges(trends, traffic) {
 // ---------------------------------------------------------------- แผนที่
 
 function renderMap(zones, points) {
-  const located = zones.filter((zone) => zone.latitude !== null && zone.longitude !== null);
+  // แยกที่ยอดทั้งช่วงเป็น 0 คือต้นทางไม่มีข้อมูลช่วงนั้น (เช่นปี 2025 มีข้อมูลแค่บางแยก) ไม่วาด จะได้ไม่ดูเหมือนรถน้อย
+  const located = zones.filter((zone) => zone.latitude !== null && zone.longitude !== null && zone.vehicle_volume > 0);
   const maxVolume = Math.max(...located.map((zone) => zone.vehicle_volume), 1);
 
   if (window.poiHeat) window.map.removeLayer(window.poiHeat);
@@ -127,18 +128,25 @@ function renderMap(zones, points) {
   });
 
   if (window.trafficLayer) window.map.removeLayer(window.trafficLayer);
+  // เก็บเลเยอร์ของแต่ละแยกไว้ ให้กดชื่อแยกในรายการอันดับแล้วเลื่อนแผนที่ไปเปิด popup ได้
+  state.trafficShapes = new Map();
   window.trafficLayer = L.layerGroup(located.map((zone) => {
     const intensity = zone.vehicle_volume / maxVolume;
     const color = intensity > 0.66 ? '#c33f2c' : intensity > 0.33 ? '#e5b84d' : '#4b90a9';
     const nearby = zone.poi_nearby_by_category
       ? Object.entries(zone.poi_nearby_by_category).map(([key, value]) => `${key} ${value}`).join(' · ')
       : '';
-    return trafficShape(zone, intensity, color).bindPopup(
+    const shape = trafficShape(zone, intensity, color);
+    state.trafficShapes.set(zone.intersection_name, { shape, center: [zone.latitude, zone.longitude] });
+    return shape.bindPopup(
       `<strong>${zone.intersection_name}</strong><br>` +
       `ปริมาณรถสะสม ${numberFormat.format(zone.vehicle_volume)} คัน<br>` +
       `ธุรกิจท่องเที่ยวรอบแยก ${numberFormat.format(zone.poi_nearby)} แห่ง<br>` +
       (nearby ? `<small>${nearby}</small><br>` : '') +
-      `<small>พิกัดจาก OSM: ${zone.geocode_method === 'osm_junction_name' ? 'โหนดแยกที่มีชื่อ' : 'จุดตัดถนน ' + (zone.geocode_detail || '')}</small>`
+      `<small>พิกัดจาก OSM: ${{
+        osm_junction_name: 'โหนดแยกที่มีชื่อ',
+        osm_signal_cluster: escapeHtml(zone.geocode_detail || 'กลุ่มไฟจราจร'),
+      }[zone.geocode_method] || 'จุดตัดถนน ' + escapeHtml(zone.geocode_detail || '')}</small>`
     );
   }));
 
@@ -319,20 +327,29 @@ function renderRanking(zones) {
     selectTrafficYear(String(last));
     return;
   }
-  const top = zones.slice(0, 8);
+  // อิงเฉพาะแยกที่มีข้อมูลในช่วงที่เลือก แยกที่ยอดเป็น 0 ทั้งช่วงคือต้นทางไม่มีข้อมูล ไม่ใช่ไม่มีรถ
+  const withData = zones.filter((zone) => zone.vehicle_volume > 0);
+  const missing = zones.length - withData.length;
+  const top = withData.slice(0, 8);
   const maxVolume = top[0]?.vehicle_volume || 1;
   const period = select.selectedOptions[0]?.textContent || '';
-  document.querySelector('#ranking-list').innerHTML = top.map((zone, index) => `
-    <div class="ranking-item">
+  document.querySelector('#ranking-list').innerHTML = top.map((zone, index) => {
+    // แยกที่ยังหาพิกัดไม่ได้ไม่มีบนแผนที่ จึงกดไม่ได้และบอกไว้ตรง ๆ
+    const located = zone.latitude !== null && zone.longitude !== null;
+    return `
+    <div class="ranking-item${located ? ' is-locatable' : ''}"${located
+      ? ` role="button" tabindex="0" data-intersection="${escapeHtml(zone.intersection_name)}" title="ดูแยกนี้บนแผนที่"` : ''}>
       <span class="rank">${String(index + 1).padStart(2, '0')}</span>
       <div>
-        <div class="rank-name">${zone.intersection_name}</div>
+        <div class="rank-name">${escapeHtml(zone.intersection_name)}${located ? '' : ' <small>ไม่มีพิกัดบนแผนที่</small>'}</div>
         <div class="rank-bar"><i style="width:${Math.max(8, zone.vehicle_volume / maxVolume * 100)}%"></i></div>
       </div>
       <div class="rank-value">${compactFormat.format(zone.vehicle_volume)}<span class="rank-unit">คัน ${select.value ? 'ทั้งปี' : 'รวม'}</span></div>
-    </div>`).join('') || '<div class="loading">ยังไม่มีข้อมูลปริมาณรถ</div>';
+    </div>`;
+  }).join('') || '<div class="loading">ยังไม่มีข้อมูลปริมาณรถ</div>';
   setText('ranking-note', zones.length
-    ? `ยอด${period} จากข้อมูลย้อนหลังของเมือง ไม่ใช่สภาพจราจรขณะนี้ · ข้อมูลปี 2024 มีเดือนที่ค่าสูงผิดปกติ จึงไม่ควรเทียบข้ามปี`
+    ? `${missing ? `${period} มีข้อมูล ${withData.length} แยก อีก ${missing} แยกต้นทางไม่มีข้อมูลช่วงนี้จึงไม่แสดง · ` : ''}`
+      + `ยอด${period} จากข้อมูลย้อนหลังของเมือง ไม่ใช่สภาพจราจรขณะนี้ · ข้อมูลปี 2024 มีเดือนที่ค่าสูงผิดปกติ จึงไม่ควรเทียบข้ามปี`
     : '');
 }
 
@@ -346,6 +363,44 @@ async function selectTrafficYear(year) {
 }
 
 document.querySelector('#traffic-year').addEventListener('change', (event) => selectTrafficYear(event.target.value));
+
+// กดชื่อแยกในรายการอันดับ แผนที่เลื่อนไปที่แยกนั้นแล้วเปิดรายละเอียด
+function focusIntersection(name) {
+  const entry = state.trafficShapes?.get(name);
+  if (!entry) return;
+  // ถ้าปิดชั้นปริมาณรถไว้ เปิดให้ก่อน ไม่งั้นเลื่อนไปแล้วจะไม่เห็นอะไร
+  const toggle = document.querySelector('#layer-traffic');
+  if (!toggle.checked) {
+    toggle.checked = true;
+    applyLayerVisibility();
+  }
+  document.querySelector('#map').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  window.map.closePopup();
+  const zoom = Math.max(window.map.getZoom(), 16);
+  // ถ้าแผนที่อยู่ตรงนั้นอยู่แล้ว flyTo จะไม่ขยับและไม่มี moveend ให้รอ จึงเปิด popup ทันที
+  if (window.map.getZoom() === zoom && window.map.getCenter().distanceTo(entry.center) < 5) {
+    entry.shape.openPopup(entry.center);
+  } else {
+    window.map.once('moveend', () => entry.shape.openPopup(entry.center));
+    window.map.flyTo(entry.center, zoom, { duration: 0.8 });
+  }
+  document.querySelectorAll('#ranking-list .ranking-item').forEach((item) => {
+    item.classList.toggle('is-active', item.dataset.intersection === name);
+  });
+}
+
+const rankingList = document.querySelector('#ranking-list');
+rankingList.addEventListener('click', (event) => {
+  const item = event.target.closest('[data-intersection]');
+  if (item) focusIntersection(item.dataset.intersection);
+});
+rankingList.addEventListener('keydown', (event) => {
+  const item = event.target.closest('[data-intersection]');
+  if (item && (event.key === 'Enter' || event.key === ' ')) {
+    event.preventDefault();
+    focusIntersection(item.dataset.intersection);
+  }
+});
 
 // ถ้ามีลำดับที่ AI จัดไว้ ให้ข้อเหล่านั้นขึ้นก่อนตามลำดับพร้อมเหตุผล ข้อที่ AI ไม่ได้เลือกต่อท้ายตามลำดับของกฎ
 // จับคู่ด้วย key ของกฎ เพราะหัวข้อเปลี่ยนตามข้อมูล ข้อที่ AI เคยจัดไว้แต่ตอนนี้กฎไม่สร้างแล้วจะหายไปเอง

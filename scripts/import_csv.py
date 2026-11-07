@@ -155,12 +155,18 @@ def demographic_wide_rows(source_file: str, row: dict[str, str]) -> list[tuple]:
     return values
 
 
+def intersection_name(raw_value: Optional[str]) -> str:
+    # ต้นฉบับสะกด "แยก" ผิดเป็น "แผก" อยู่บางรายการ (เช่น "แผกบิ๊กซีเอ็กซ์ตร้า") แก้ตอนนำเข้าเพื่อให้ชื่อบนหน้าเว็บถูกต้อง
+    name = clean(raw_value)
+    return "แยก" + name[len("แผก"):] if name.startswith("แผก") else name
+
+
 def zone_traffic_rows(source_file: str, row: dict[str, str]) -> list[tuple]:
     year_be = buddhist_year(row.get("calendar_year"))
     return [(
         source_file,
         clean(row.get("intersection_id")),
-        clean(row.get("intersection_name")),
+        intersection_name(row.get("intersection_name")),
         year_be,
         year_be - 543,
         month_number(row.get("month_id")),

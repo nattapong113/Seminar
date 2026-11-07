@@ -664,9 +664,10 @@ def summary(_: dict = Depends(auth.require("view:overview"))) -> dict:
         """SELECT SUM(number_of_tourists) AS tourists FROM tourism_monthly
            WHERE calendar_year = (SELECT MAX(calendar_year) - 1 FROM tourism_monthly)"""
     )
+    # นับเฉพาะแยกที่มีตัวเลขจริง แยกที่ต้นทางให้เป็น 0 ทั้งช่วงคือไม่มีข้อมูล ไม่ใช่ไม่มีรถ
     traffic_year = query_one(
         """SELECT calendar_year, SUM(vehicle_volume) AS vehicles,
-                  COUNT(DISTINCT intersection_name) AS intersections
+                  COUNT(DISTINCT intersection_name) FILTER (WHERE vehicle_volume > 0) AS intersections
            FROM zone_traffic_volume GROUP BY calendar_year ORDER BY calendar_year DESC LIMIT 1"""
     )
     poi_total = query_one("SELECT COUNT(*) AS total, COUNT(DISTINCT category) AS categories FROM poi_businesses")
@@ -1150,7 +1151,7 @@ def traffic_trends(intersection_name: str | None = Query(default=None),
         f"""SELECT to_char(make_date(calendar_year, month_id, 1), 'YYYY-MM-DD') AS date,
                    calendar_year, month_id, month_name,
                    SUM(vehicle_volume) AS vehicle_volume,
-                   COUNT(DISTINCT intersection_name) AS intersections
+                   COUNT(DISTINCT intersection_name) FILTER (WHERE vehicle_volume > 0) AS intersections
             FROM zone_traffic_volume {clause}
             GROUP BY calendar_year, month_id, month_name ORDER BY calendar_year, month_id""",
         parameters,

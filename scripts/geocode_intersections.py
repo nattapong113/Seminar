@@ -64,7 +64,14 @@ ROAD_ALIASES: dict[str, tuple[str, ...]] = {
     "จอมเทียนสายสอง": ("จอมเทียนสายสอง", "ถนนจอมเทียนสายสอง"),
 }
 
-NAKLUA_SOI_PATTERN = re.compile(r"^แ[ยผ]กนาเกลือซอย\s*(\d+)$")
+# แยกที่ OSM ไม่มีชื่อแยกและไม่ได้ตั้งชื่อตามคู่ถนน จึงระบุพิกัดเองจากกลุ่มโหนดไฟจราจรใน OSM
+# (method = osm_signal_cluster) ใช้ค่าเฉลี่ยของโหนดไฟจราจรที่อยู่ในแยกเดียวกัน
+SIGNAL_CLUSTERS: dict[str, tuple[float, float, str]] = {
+    # บิ๊กซีพัทยากลาง ไฟจราจร 4 โหนดบนถนนพัทยากลางหน้าห้าง (OSM node 6800540826, 6800628678-80)
+    "แยกบิ๊กซีเอ็กซ์ตร้า": (12.933903, 100.894521, "ไฟจราจรหน้าบิ๊กซีพัทยากลาง ถนนพัทยากลาง"),
+}
+
+NAKLUA_SOI_PATTERN =re.compile(r"^แ[ยผ]กนาเกลือซอย\s*(\d+)$")
 
 
 def overpass(query: str) -> list[dict]:
@@ -220,6 +227,11 @@ def main() -> None:
                     save(connection, name, coordinates[0], coordinates[1], "osm_road_pair", detail)
                     by_method["osm_road_pair"].append(f"{name} ({detail})")
                     continue
+            if name in SIGNAL_CLUSTERS:
+                latitude, longitude, detail = SIGNAL_CLUSTERS[name]
+                save(connection, name, latitude, longitude, "osm_signal_cluster", detail)
+                by_method["osm_signal_cluster"].append(f"{name} ({detail})")
+                continue
             unmatched.append(name)
 
     for method, matched in by_method.items():
