@@ -5,3 +5,4 @@ __pycache__/
 pattaya_tourism.db
 .vscode/
 demo_accounts.local.md
+cache/

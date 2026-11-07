@@ -133,9 +133,7 @@ function renderMap(zones, points) {
     const nearby = zone.poi_nearby_by_category
       ? Object.entries(zone.poi_nearby_by_category).map(([key, value]) => `${key} ${value}`).join(' · ')
       : '';
-    return L.circleMarker([zone.latitude, zone.longitude], {
-      radius: 7 + intensity * 17, color, fillColor: color, fillOpacity: 0.45, weight: 2,
-    }).bindPopup(
+    return trafficShape(zone, intensity, color).bindPopup(
       `<strong>${zone.intersection_name}</strong><br>` +
       `ปริมาณรถสะสม ${numberFormat.format(zone.vehicle_volume)} คัน<br>` +
       `ธุรกิจท่องเที่ยวรอบแยก ${numberFormat.format(zone.poi_nearby)} แห่ง<br>` +
@@ -144,7 +142,52 @@ function renderMap(zones, points) {
     );
   }));
 
+  state.lastMapData = [zones, points];
   applyLayerVisibility();
+}
+
+// ปริมาณรถของแยกวาดเป็นเส้นตามถนนจริงรอบแยก หนาและเข้มที่แยก แล้วเรียวจางลงตามระยะห่าง
+// ถ้ายังไม่มีเส้นถนน (กำลังโหลดหรือดึงจาก OpenStreetMap ไม่ได้) ใช้วงกลมแบบเดิม
+const ROAD_RADIUS_METERS = 300;
+
+function trafficShape(zone, intensity, color) {
+  const lines = state.intersectionRoads?.[zone.intersection_name];
+  if (!lines?.length) {
+    return L.circleMarker([zone.latitude, zone.longitude], {
+      radius: 7 + intensity * 17, color, fillColor: color, fillOpacity: 0.45, weight: 2,
+    });
+  }
+  const baseWeight = 4 + intensity * 8;
+  const segments = [];
+  lines.forEach((line) => {
+    for (let i = 1; i < line.length; i += 1) {
+      const t = Math.min(1, (line[i - 1][2] + line[i][2]) / 2 / ROAD_RADIUS_METERS);
+      segments.push(L.polyline([line[i - 1].slice(0, 2), line[i].slice(0, 2)], {
+        color, weight: baseWeight * (1 - 0.75 * t), opacity: 0.95 - 0.8 * t, lineCap: 'round',
+      }));
+    }
+  });
+  // จุดกลางแยกไว้ให้เห็นตำแหน่งและกดง่ายเมื่อซูมออก
+  segments.push(L.circleMarker([zone.latitude, zone.longitude], {
+    radius: 3 + intensity * 3, color: '#ffffff', weight: 1.5, fillColor: color, fillOpacity: 1,
+  }));
+  return L.featureGroup(segments);
+}
+
+async function loadIntersectionRoads() {
+  if (state.intersectionRoads || state.roadsLoading) return;
+  state.roadsLoading = true;
+  try {
+    state.intersectionRoads = await api('/api/zones/roads');
+  } catch (error) {
+    if (error.status !== 401) console.warn('โหลดเส้นถนนรอบแยกไม่สำเร็จ ใช้วงกลมแทน:', error);
+    return;
+  } finally {
+    state.roadsLoading = false;
+  }
+  // วาดใหม่ด้วยข้อมูลชุดล่าสุด ถ้าตอนนี้ไม่ได้อยู่หน้าแผนที่ drawMap จะพักไว้วาดตอนเปิด
+  if (!state.mapData && state.lastMapData) state.mapData = state.lastMapData;
+  drawMap();
 }
 
 // แผนที่วาดได้เฉพาะตอนหน้าเชิงพื้นที่แสดงอยู่ ถ้าหน้าถูกซ่อน แผนที่จะกว้าง 0 แล้ว leaflet.heat พังตอนอ่าน canvas
@@ -1045,6 +1088,8 @@ async function loadDashboard() {
       state.mapData = [zones, points];
       drawMap();
       renderRanking(zones);
+      // ครั้งแรกอาจต้องรอ OpenStreetMap หลายวินาที จึงไม่รอ แผนที่แสดงวงกลมไปก่อนแล้วเปลี่ยนเป็นเส้นเมื่อมาถึง
+      loadIntersectionRoads();
     }),
     load([fetchIf('view:spatial', '/api/zones/micro')], renderMicroZones),
     load([fetchIf('view:recommendations', '/api/recommendations')], renderRecommendations),

@@ -806,6 +806,143 @@ def zones(year: int | None = Query(default=None),
     return intersections
 
 
+# เส้นถนนรอบแยก ใช้วาดปริมาณรถเป็นเส้นตามถนนจริงแทนวงกลม (ไล่จากหนาที่แยกไปเรียวที่ปลาย)
+# เรขาคณิตถนนดึงจาก OpenStreetMap ครั้งเดียวแล้วเก็บไฟล์ไว้ เพราะ Overpass เป็นเซิร์ฟเวอร์สาธารณะที่ช้าและล่มบ่อย
+ROAD_RADIUS_METERS = 300
+# พิกัดแยกบางแห่งเป็นค่าเฉลี่ยของหลายโหนด (เกาะกลาง/ถนนคู่ขนาน) จึงเผื่อระยะให้ถนนที่ผ่านแยกไว้
+ROAD_JUNCTION_METERS = 40
+ROAD_HIGHWAYS = "^(motorway|trunk|primary|secondary|tertiary|unclassified|residential)(_link)?$"
+ROAD_CACHE_FILE = BASE_DIR / "cache" / "intersection_roads.json"
+OVERPASS_ENDPOINTS = (
+    "https://overpass-api.de/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+)
+_road_lock = threading.Lock()
+_road_failed_at = 0.0
+ROAD_RETRY_SECONDS = 600
+
+
+def _meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    # ระยะใกล้ ๆ ใช้ระนาบแบนพอ คลาดไม่ถึงเมตรในรัศมีไม่กี่ร้อยเมตร
+    dy = (lat2 - lat1) * 111_320
+    dx = (lon2 - lon1) * 111_320 * cos(radians(lat1))
+    return sqrt(dx * dx + dy * dy)
+
+
+def _way_distance(geometry: list[dict], lat: float, lon: float) -> float:
+    """ระยะที่ใกล้ที่สุดจากแยกถึงเส้นถนน (วัดถึงตัวเส้น ไม่ใช่แค่จุดยอด เพราะถนนตรงมีจุดห่างกันมาก)"""
+    scale = 111_320 * cos(radians(lat))
+    xy = [((g["lon"] - lon) * scale, (g["lat"] - lat) * 111_320) for g in geometry]
+    best = min(sqrt(x * x + y * y) for x, y in xy)
+    for (x1, y1), (x2, y2) in zip(xy, xy[1:]):
+        dx, dy = x2 - x1, y2 - y1
+        length = dx * dx + dy * dy
+        if length:
+            t = max(0.0, min(1.0, -(x1 * dx + y1 * dy) / length))
+            best = min(best, sqrt((x1 + t * dx) ** 2 + (y1 + t * dy) ** 2))
+    return best
+
+
+def _clip_way(geometry: list[dict], lat: float, lon: float, radius: float) -> list[list[list[float]]]:
+    """ตัดเส้นถนนให้เหลือเฉพาะช่วงที่อยู่ในรัศมีจากแยก คืนเป็นหลายท่อน แต่ละจุดคือ [lat, lon, ระยะจากแยก]"""
+    # ถนนตรงใน OSM มีจุดยอดห่างกันได้หลายร้อยเมตร ถ้าทั้งสองปลายอยู่นอกวงช่วงที่ผ่านแยกจะหายไป
+    # จึงซอยเส้นให้มีจุดทุก ~15 ม. ก่อน ซึ่งทำให้หน้าเว็บไล่ความหนา/ความจางได้เนียนด้วย
+    dense: list[tuple[float, float]] = []
+    for a, b in zip(geometry, geometry[1:]):
+        steps = max(1, int(_meters(a["lat"], a["lon"], b["lat"], b["lon"]) // 15))
+        dense.extend(
+            (a["lat"] + (b["lat"] - a["lat"]) * i / steps, a["lon"] + (b["lon"] - a["lon"]) * i / steps)
+            for i in range(steps)
+        )
+    if geometry:
+        dense.append((geometry[-1]["lat"], geometry[-1]["lon"]))
+
+    pieces: list[list[list[float]]] = []
+    current: list[list[float]] = []
+    previous = None
+    for point_lat, point_lon in dense:
+        here = (point_lat, point_lon, _meters(lat, lon, point_lat, point_lon))
+        inside = here[2] <= radius
+        if previous is not None and (previous[2] <= radius) != inside:
+            # เส้นตัดขอบวง เติมจุดบนขอบเพื่อให้ปลายเส้นจบที่รัศมีพอดี
+            t = (radius - previous[2]) / (here[2] - previous[2])
+            edge = [previous[0] + (here[0] - previous[0]) * t, previous[1] + (here[1] - previous[1]) * t, radius]
+            current.append(edge)
+            if not inside:
+                pieces.append(current)
+                current = []
+        if inside:
+            current.append([here[0], here[1], round(here[2], 1)])
+        previous = here
+    if current:
+        pieces.append(current)
+    return [[[round(p[0], 6), round(p[1], 6), p[2]] for p in piece] for piece in pieces if len(piece) > 1]
+
+
+def _fetch_intersection_roads(points: list[dict]) -> dict[str, list]:
+    around = "".join(
+        f'way["highway"~"{ROAD_HIGHWAYS}"](around:{ROAD_RADIUS_METERS},{p["latitude"]},{p["longitude"]});'
+        for p in points
+    )
+    body = urlencode({"data": f"[out:json][timeout:120];({around});out geom;"}).encode("utf-8")
+    last_error: Optional[Exception] = None
+    for endpoint in OVERPASS_ENDPOINTS:
+        try:
+            request = HttpRequest(endpoint, data=body, headers={"User-Agent": USER_AGENT})
+            with urlopen(request, timeout=90) as response:
+                ways = [e for e in json.load(response).get("elements", []) if e.get("geometry")]
+            break
+        except Exception as exc:  # endpoint สาธารณะล่มบ่อย ลองตัวถัดไป
+            last_error = exc
+    else:
+        raise HTTPException(503, f"ดึงเส้นถนนจาก OpenStreetMap ไม่สำเร็จ: {last_error}")
+
+    roads: dict[str, list] = {}
+    for p in points:
+        lines = []
+        for way in ways:
+            # เอาเฉพาะถนนที่วิ่งผ่านแยกจริง ไม่งั้นซอยข้าง ๆ ในรัศมีจะถูกระบายสีไปด้วย
+            if _way_distance(way["geometry"], p["latitude"], p["longitude"]) > ROAD_JUNCTION_METERS:
+                continue
+            lines.extend(_clip_way(way["geometry"], p["latitude"], p["longitude"], ROAD_RADIUS_METERS))
+        roads[p["intersection_name"]] = lines
+    return roads
+
+
+@app.get("/api/zones/roads")
+def intersection_roads(_: dict = Depends(auth.require("view:spatial"))) -> dict:
+    """เส้นถนนรอบแต่ละแยกในรัศมี ROAD_RADIUS_METERS ที่ดึงจาก OpenStreetMap"""
+    points = query(
+        """SELECT DISTINCT intersection_name, latitude, longitude FROM zone_traffic_volume
+           WHERE latitude IS NOT NULL AND longitude IS NOT NULL ORDER BY intersection_name"""
+    )
+    # พิกัดแยกเปลี่ยนเมื่อรันสคริปต์ geocode ใหม่ ใช้เป็นกุญแจของแคชเพื่อดึงใหม่เองเมื่อพิกัดเปลี่ยน
+    key = ";".join(f'{p["intersection_name"]}@{p["latitude"]:.6f},{p["longitude"]:.6f}' for p in points)
+    with _road_lock:
+        try:
+            cached = json.loads(ROAD_CACHE_FILE.read_text(encoding="utf-8"))
+            if cached.get("key") == key:
+                return cached["roads"]
+        except (OSError, ValueError):
+            pass
+        # ดึงไม่สำเร็จแล้วรอสักพักก่อนลองใหม่ ไม่งั้นทุกครั้งที่เปิดหน้าจะค้างรอ Overpass หลายนาที
+        global _road_failed_at
+        if time.time() - _road_failed_at < ROAD_RETRY_SECONDS:
+            raise HTTPException(503, "OpenStreetMap ยังไม่พร้อม จะลองดึงเส้นถนนใหม่ภายหลัง")
+        try:
+            roads = _fetch_intersection_roads(points) if points else {}
+        except HTTPException:
+            _road_failed_at = time.time()
+            raise
+        try:
+            ROAD_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            ROAD_CACHE_FILE.write_text(json.dumps({"key": key, "roads": roads}, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            pass  # เขียนไฟล์ไม่ได้ (เช่นดิสก์อ่านอย่างเดียว) ก็ยังส่งผลให้หน้าเว็บได้ แค่จะดึงใหม่ครั้งหน้า
+        return roads
+
+
 # ---------------------------------------------------------------- โซนย่อย (Micro-Zoning)
 
 # ย่านท่องเที่ยวหลักของเมืองพัทยา เก็บเป็นจุดศูนย์กลางกับรัศมีเพื่อแบ่งพื้นที่ระดับย่อย
