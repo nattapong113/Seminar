@@ -15,7 +15,12 @@
    - ถ้ารหัสผ่านมีอักขระพิเศษ ต้องเข้ารหัสแบบ URL เช่น `@` → `%40`, `#` → `%23`, `/` → `%2F`
    - ไฟล์นี้อยู่ใน `.gitignore` และ `.dockerignore` แล้ว ห้าม commit
 
-2. ติดตั้งและรัน
+2. รันด้วยคำสั่งเดียว (สร้าง `.venv` ติดตั้งแพ็กเกจ เปิดเซิร์ฟเวอร์ และเปิดเบราว์เซอร์ให้เอง)
+   - macOS: ดับเบิลคลิก `run.command` ใน Finder หรือพิมพ์ `./run.sh` ใน Terminal
+   - Linux: `./run.sh`
+   - Windows: ดับเบิลคลิก `run.bat`
+
+   หรือติดตั้งและรันเองทีละขั้น
    ```powershell
    python -m venv .venv
    .\.venv\Scripts\Activate.ps1
