@@ -296,3 +296,6 @@ a.nav-item{text-decoration:none}
 .ranking-item.is-locatable:hover,.ranking-item.is-locatable:focus-visible{background:#f6f9f8;outline:0}
 .ranking-item.is-active{background:#fff4f1;box-shadow:inset 3px 0 0 var(--coral)}
 .ranking-item .rank-name small{font-weight:400;color:#9ba7a9;font-size:12px}
+
+/* ปุ่มลบไฟล์ท้ายแต่ละแถวในประวัติการนำเข้า */
+.import-row{grid-template-columns:auto 1fr auto;align-items:center}

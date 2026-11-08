@@ -544,10 +544,52 @@ def list_imports(limit: int = Query(default=15, ge=1, le=200),
         """SELECT i.id, COALESCE(i.raw_filename, i.source_name) AS name, i.import_type,
                   to_char(i.imported_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD HH24:MI') AS imported_at,
                   i.records_total, i.records_success, i.records_failed, i.notes,
+                  -- ลบได้เฉพาะไฟล์ที่นำเข้า ข้อมูลจาก API ภายนอกไม่มีชื่อไฟล์ และจะถูกดึงกลับมาเองในรอบอัปเดตถัดไป
+                  i.raw_filename IS NOT NULL AS deletable,
                   (SELECT e.error_text FROM import_errors e WHERE e.import_id = i.id ORDER BY e.id LIMIT 1) AS first_error
            FROM imports i ORDER BY i.imported_at DESC, i.id DESC LIMIT %s""",
         [limit],
     )
+
+
+@app.delete("/api/admin/imports/{import_id}")
+def delete_import(import_id: int, actor: dict = Depends(auth.require("manage:data"))) -> dict:
+    """ลบข้อมูลทั้งหมดที่มาจากไฟล์ของการนำเข้านี้ พร้อมประวัติการนำเข้าทุกครั้งของไฟล์ชื่อเดียวกัน
+
+    ใช้ลบไฟล์ที่นำเข้าผิดหรือไฟล์ทดสอบ ข้อมูลของไฟล์อื่นไม่ถูกแตะ ทำใน transaction เดียว พลาดกลางทางจะไม่มีอะไรเปลี่ยน
+    ประวัติการใช้งาน (audit log) ยังบันทึกไว้ว่าใครลบไฟล์ไหนเมื่อไร
+    """
+    row = query_one("SELECT raw_filename FROM imports WHERE id = %s", [import_id])
+    if not row:
+        raise HTTPException(status_code=404, detail="ไม่พบประวัติการนำเข้านี้")
+    name = row["raw_filename"]
+    if not name:
+        raise HTTPException(status_code=400, detail="ข้อมูลจาก API ภายนอกลบไม่ได้ ระบบจะดึงกลับมาเองในรอบอัปเดตถัดไป")
+
+    def remove() -> tuple[int, int]:
+        with get_pool().connection() as connection, connection.transaction():
+            rows = sum(
+                connection.execute(f"DELETE FROM {table} WHERE source_file = %s", (name,)).rowcount
+                for table in (*DATASET_TABLE_LABELS, "pattaya_report_metrics")
+            )
+            ids = [item["id"] for item in connection.execute(
+                "SELECT id FROM imports WHERE raw_filename = %s", (name,)
+            ).fetchall()]
+            connection.execute("DELETE FROM import_errors WHERE import_id = ANY(%s)", (ids,))
+            connection.execute("DELETE FROM imports WHERE id = ANY(%s)", (ids,))
+            # แหล่งข้อมูลตั้งชื่อตามชื่อไฟล์ไม่มีนามสกุล ลบเฉพาะเมื่อไม่มีการนำเข้าอื่นอ้างถึงแล้ว
+            connection.execute(
+                """DELETE FROM data_sources s WHERE s.name = %s
+                   AND NOT EXISTS (SELECT 1 FROM imports i WHERE i.data_source_id = s.id)""",
+                (Path(name).stem,),
+            )
+            return rows, len(ids)
+
+    rows, imports = remove()
+    # ผลพยากรณ์และผลกระทบอาจคำนวณจากข้อมูลที่เพิ่งลบ ต้องคำนวณใหม่
+    _analysis_cache.clear()
+    audit("delete_import", actor["username"], name, f"ลบข้อมูล {rows} แถว · ประวัติการนำเข้า {imports} รายการ")
+    return {"ok": True, "filename": name, "rows_deleted": rows, "imports_deleted": imports}
 
 
 def record_refresh(outcome: dict, actor: str) -> None:

@@ -1431,12 +1431,46 @@ async function loadDataPanel() {
     const outcome = failed
       ? `ไม่สำเร็จ${row.first_error ? ` — ${escapeHtml(row.first_error)}` : ''}`
       : `${numberFormat.format(row.records_success ?? 0)} ระเบียน`;
+    // ข้อมูลจาก API ภายนอกไม่มีปุ่มลบ เพราะระบบดึงกลับมาเองในรอบอัปเดตถัดไป
+    const remove = row.deletable
+      ? `<button class="icon-btn" data-delete-import="${row.id}" data-name="${escapeHtml(row.name)}"
+           title="ลบข้อมูลของไฟล์นี้" aria-label="ลบข้อมูลของไฟล์ ${escapeHtml(row.name)}">✕</button>`
+      : '';
     return `
-    <div class="audit-row${failed ? ' is-failed' : ''}">
+    <div class="audit-row import-row${failed ? ' is-failed' : ''}">
       <span class="audit-time">${escapeHtml(row.imported_at)}</span>
       <span>${escapeHtml(row.name)} · ${outcome}${row.notes ? ` · ${escapeHtml(row.notes)}` : ''}</span>
+      ${remove}
     </div>`;
   }).join('') || '<div class="loading">ยังไม่มีประวัติ</div>';
+
+  document.querySelectorAll('[data-delete-import]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const name = button.dataset.name;
+      if (!confirm(
+        `ลบข้อมูลทั้งหมดที่มาจากไฟล์ "${name}" ออกจากระบบ?\n\n`
+        + '· ประวัติการนำเข้าทุกครั้งของไฟล์ชื่อนี้จะถูกลบด้วย\n'
+        + '· ข้อมูลช่วงเวลาเดียวกันที่ไฟล์นี้เคยแทนที่ไปแล้วจะไม่กลับมา ต้องนำเข้าไฟล์เดิมใหม่\n'
+        + '· ย้อนกลับไม่ได้',
+      )) return;
+      const box = document.querySelector('#upload-result');
+      button.disabled = true;
+      try {
+        const result = await api(`/api/admin/imports/${button.dataset.deleteImport}`, { method: 'DELETE' });
+        box.hidden = false;
+        box.className = 'upload-result login-success';
+        box.textContent = `ลบ ${result.filename} แล้ว — ข้อมูล ${numberFormat.format(result.rows_deleted)} แถว`
+          + ` · ประวัติการนำเข้า ${result.imports_deleted} รายการ`;
+        // ตัวเลขบนแดชบอร์ดอาจมาจากไฟล์นี้ จึงโหลดใหม่ทั้งหน้า (รวมแผงนี้ด้วย)
+        await loadDashboard();
+      } catch (caught) {
+        box.hidden = false;
+        box.className = 'upload-result login-error';
+        box.textContent = caught.message;
+        button.disabled = false;
+      }
+    });
+  });
 
   setText('refresh-mode', refresh.enabled ? 'เปิดอยู่' : 'ปิดอยู่ (AUTO_REFRESH=0)');
   document.querySelector('#refresh-list').innerHTML = refresh.jobs.map((job) => {
@@ -1531,7 +1565,7 @@ const AUDIT_LABELS = {
   register: 'สมัครสมาชิก', register_duplicate: 'สมัครด้วยชื่อที่มีอยู่แล้ว',
   create_user: 'สร้างผู้ใช้', approve_user: 'อนุมัติผู้ใช้', reject_user: 'ปฏิเสธหรือระงับผู้ใช้', delete_user: 'ลบผู้ใช้',
   change_password: 'เปลี่ยนรหัสผ่าน', change_password_failed: 'เปลี่ยนรหัสผ่านไม่สำเร็จ', reset_password: 'รีเซ็ตรหัสผ่าน',
-  import_data: 'นำเข้าข้อมูล', import_failed: 'นำเข้าข้อมูลไม่สำเร็จ',
+  import_data: 'นำเข้าข้อมูล', import_failed: 'นำเข้าข้อมูลไม่สำเร็จ', delete_import: 'ลบข้อมูลที่นำเข้า',
   refresh_data: 'อัปเดตข้อมูลอัตโนมัติ', refresh_failed: 'อัปเดตข้อมูลไม่สำเร็จ',
   ai_summary: 'ให้ AI สรุป', ai_summary_failed: 'ให้ AI สรุปไม่สำเร็จ',
   business_upload: 'อัปโหลดข้อมูลธุรกิจ', business_delete: 'ลบข้อมูลธุรกิจ', business_ai: 'ให้ AI สรุปข้อมูลธุรกิจ',
